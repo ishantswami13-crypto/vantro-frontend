@@ -1,0 +1,119 @@
+package main
+
+import (
+	"context"
+	"log"
+	"os"
+	"strings"
+
+	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/cors"
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/ishantswami13-crypto/vantro-backend/internal/expense"
+	apphttp "github.com/ishantswami13-crypto/vantro-backend/internal/http"
+	"github.com/ishantswami13-crypto/vantro-backend/internal/income"
+	"github.com/ishantswami13-crypto/vantro-backend/internal/router"
+	"github.com/ishantswami13-crypto/vantro-backend/internal/summary"
+)
+
+func main() {
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		log.Fatal("DATABASE_URL is not set")
+	}
+
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		log.Fatalf("error creating pgx pool: %v", err)
+	}
+	defer pool.Close()
+
+	if err := pool.Ping(ctx); err != nil {
+		log.Fatalf("error pinging database: %v", err)
+	}
+
+	app := fiber.New()
+
+	app.Use(cors.New(cors.Config{
+		AllowOrigins: "http://localhost:3000",
+		AllowHeaders: "Origin, Content-Type, Accept, Authorization",
+		AllowMethods: "GET,POST,PUT,DELETE,OPTIONS",
+	}))
+
+	app.Get("/health", func(c *fiber.Ctx) error {
+		return c.JSON(fiber.Map{"status": "ok"})
+	})
+	app.Get("/api/health", func(c *fiber.Ctx) error {
+		return c.SendString("ok")
+	})
+
+	authHandler := &apphttp.AuthHandler{DB: pool}
+	incomeRepo := income.NewRepository(pool)
+	incomeHandler := income.NewHandler(incomeRepo)
+	expenseRepo := expense.NewRepo(pool)
+	expenseHandler := expense.NewHandler(expenseRepo)
+	summaryRepo := summary.Repo{DB: pool}
+	summaryHandler := &summary.Handler{Repo: summaryRepo}
+
+	authMiddleware := buildJWTMiddleware()
+
+	r := &router.Router{
+		AuthHandler:    authHandler,
+		IncomeHandler:  incomeHandler,
+		ExpenseHandler: expenseHandler,
+		SummaryHandler: summaryHandler,
+		AuthMW:         authMiddleware,
+	}
+	r.RegisterRoutes(app)
+
+	if err := app.Listen(":8080"); err != nil {
+		log.Fatalf("server error: %v", err)
+	}
+}
+
+func buildJWTMiddleware() fiber.Handler {
+	secret := []byte(os.Getenv("JWT_SECRET"))
+	if len(secret) == 0 {
+		secret = []byte("supersecretapikey")
+	}
+
+	return func(c *fiber.Ctx) error {
+		authHeader := c.Get("Authorization")
+		if authHeader == "" {
+			return fiber.NewError(fiber.StatusUnauthorized, "missing token")
+		}
+
+		parts := strings.SplitN(authHeader, " ", 2)
+		if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
+			return fiber.NewError(fiber.StatusUnauthorized, "invalid token")
+		}
+
+		token, err := jwt.Parse(parts[1], func(t *jwt.Token) (interface{}, error) {
+			if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, fiber.NewError(fiber.StatusUnauthorized, "invalid token")
+			}
+			return secret, nil
+		})
+		if err != nil || !token.Valid {
+			return fiber.NewError(fiber.StatusUnauthorized, "invalid token")
+		}
+
+		claims, ok := token.Claims.(jwt.MapClaims)
+		if !ok {
+			return fiber.NewError(fiber.StatusUnauthorized, "invalid token")
+		}
+
+		userIDVal, ok := claims["user_id"].(string)
+		if !ok || strings.TrimSpace(userIDVal) == "" {
+			return fiber.NewError(fiber.StatusUnauthorized, "invalid token")
+		}
+
+		c.Locals("user_id", userIDVal)
+		c.Locals("userID", userIDVal)
+
+		return c.Next()
+	}
+}

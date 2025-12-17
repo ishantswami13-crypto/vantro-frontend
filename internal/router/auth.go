@@ -1,10 +1,10 @@
 package router
 
 import (
+	"encoding/json"
+	"github.com/golang-jwt/jwt/v5"
 	"net/http"
 	"time"
-	"github.com/golang-jwt/jwt/v5"
-	"encoding/json"
 )
 
 var jwtKey = []byte("supersecretapikey") // move to ENV later
@@ -22,7 +22,7 @@ func (r *Router) LoginHandler(w http.ResponseWriter, req *http.Request) {
 	var body LoginReq
 	json.NewDecoder(req.Body).Decode(&body)
 
-    // TEMP: Hardcode user (later add DB)
+	// TEMP: Hardcode user (later add DB)
 	if body.Email != "admin@vantro.com" || body.Password != "123456" {
 		http.Error(w, "Invalid credentials", http.StatusUnauthorized)
 		return
