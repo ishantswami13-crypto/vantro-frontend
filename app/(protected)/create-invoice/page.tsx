@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { apiFetch } from "@/lib/api";
 
 export default function CreateInvoice() {
   const [amount, setAmount] = useState("");
@@ -7,14 +8,8 @@ export default function CreateInvoice() {
   async function create(e: any) {
     e.preventDefault();
 
-    const token = localStorage.getItem("token");
-
-    await fetch("https://YOUR-BACKEND-URL/api/invoices/create", {
+    await apiFetch("/api/invoices/create", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
       body: JSON.stringify({ amount }),
     });
 
