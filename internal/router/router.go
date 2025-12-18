@@ -2,6 +2,8 @@ package router
 
 import (
 	"github.com/gofiber/fiber/v2"
+	"os"
+	"strings"
 
 	"github.com/ishantswami13-crypto/vantro-backend/internal/expense"
 	handlers "github.com/ishantswami13-crypto/vantro-backend/internal/http"
@@ -22,6 +24,10 @@ func (r *Router) RegisterRoutes(app *fiber.App) {
 		app.Post("/api/auth/signup", r.AuthHandler.Signup)
 		app.Post("/api/auth/login", r.AuthHandler.Login)
 		app.Get("/api/me", r.AuthMW, r.AuthHandler.Me)
+
+		if strings.EqualFold(os.Getenv("DEBUG"), "true") {
+			app.Get("/api/debug/users", r.AuthHandler.DebugUsers)
+		}
 	}
 
 	if r.IncomeHandler != nil {

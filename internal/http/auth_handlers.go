@@ -2,11 +2,14 @@ package http
 
 import (
 	"context"
+	"errors"
 	"os"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -28,6 +31,11 @@ type loginRequest struct {
 
 type authResponse struct {
 	Token string `json:"token"`
+}
+
+type debugUserResponse struct {
+	Email     string    `json:"email"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 func generateToken(userID string) (string, error) {
@@ -55,9 +63,12 @@ func (h *AuthHandler) Signup(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusBadRequest, "email and password required")
 	}
 
-	hashed, err := bcrypt.GenerateFromPassword([]byte(body.Password), bcrypt.DefaultCost)
+	hashedPassword, err := bcrypt.GenerateFromPassword(
+		[]byte(body.Password),
+		bcrypt.DefaultCost,
+	)
 	if err != nil {
-		return fiber.NewError(fiber.StatusInternalServerError, "internal error")
+		return fiber.NewError(fiber.StatusInternalServerError, "failed to hash password")
 	}
 
 	ctx := userContext(c)
@@ -68,9 +79,13 @@ func (h *AuthHandler) Signup(c *fiber.Ctx) error {
 		`INSERT INTO users (email, password_hash, full_name)
          VALUES ($1, $2, $3)
          RETURNING id`,
-		body.Email, string(hashed), body.FullName,
+		body.Email, string(hashedPassword), body.FullName,
 	).Scan(&userID)
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return fiber.NewError(fiber.StatusConflict, "email already exists")
+		}
 		return fiber.NewError(fiber.StatusInternalServerError, "could not create user")
 	}
 
@@ -88,6 +103,10 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusBadRequest, "invalid body")
 	}
 
+	if body.Email == "" || body.Password == "" {
+		return fiber.NewError(fiber.StatusBadRequest, "email and password required")
+	}
+
 	var (
 		userID       string
 		passwordHash string
@@ -100,10 +119,16 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 		body.Email,
 	).Scan(&userID, &passwordHash)
 	if err != nil {
-		return fiber.NewError(fiber.StatusUnauthorized, "invalid credentials")
+		if errors.Is(err, pgx.ErrNoRows) {
+			return fiber.NewError(fiber.StatusUnauthorized, "invalid credentials")
+		}
+		return fiber.NewError(fiber.StatusInternalServerError, "failed to fetch user")
 	}
 
-	if err := bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte(body.Password)); err != nil {
+	if err := bcrypt.CompareHashAndPassword(
+		[]byte(passwordHash),
+		[]byte(body.Password),
+	); err != nil {
 		return fiber.NewError(fiber.StatusUnauthorized, "invalid credentials")
 	}
 
@@ -117,6 +142,33 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 
 func (h *AuthHandler) Me(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusNotImplemented).JSON(fiber.Map{"error": "not implemented"})
+}
+
+func (h *AuthHandler) DebugUsers(c *fiber.Ctx) error {
+	ctx := userContext(c)
+
+	rows, err := h.DB.Query(
+		ctx,
+		`SELECT email, created_at FROM users ORDER BY created_at DESC`,
+	)
+	if err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "failed to list users")
+	}
+	defer rows.Close()
+
+	users := make([]debugUserResponse, 0)
+	for rows.Next() {
+		var user debugUserResponse
+		if err := rows.Scan(&user.Email, &user.CreatedAt); err != nil {
+			return fiber.NewError(fiber.StatusInternalServerError, "failed to list users")
+		}
+		users = append(users, user)
+	}
+	if err := rows.Err(); err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "failed to list users")
+	}
+
+	return c.JSON(users)
 }
 
 func userContext(c *fiber.Ctx) context.Context {

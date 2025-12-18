@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
 	"os"
 	"strings"
@@ -35,17 +36,37 @@ func main() {
 		log.Fatalf("error pinging database: %v", err)
 	}
 
-	app := fiber.New()
+	app := fiber.New(fiber.Config{
+		ErrorHandler: func(c *fiber.Ctx, err error) error {
+			code := fiber.StatusInternalServerError
+			message := "internal server error"
+
+			var fiberErr *fiber.Error
+			if errors.As(err, &fiberErr) {
+				code = fiberErr.Code
+				message = fiberErr.Message
+			}
+
+			return c.Status(code).JSON(fiber.Map{"error": message})
+		},
+	})
+
+	app.Get("/health", func(c *fiber.Ctx) error {
+		return c.JSON(fiber.Map{
+			"ok": true,
+		})
+	})
 
 	app.Use(cors.New(cors.Config{
-		AllowOrigins: "http://localhost:3000",
+		AllowOrigins: "http://localhost:3000,https://vantro-frontend.onrender.com",
 		AllowHeaders: "Origin, Content-Type, Accept, Authorization",
 		AllowMethods: "GET,POST,PUT,DELETE,OPTIONS",
 	}))
 
-	app.Get("/health", func(c *fiber.Ctx) error {
-		return c.JSON(fiber.Map{"status": "ok"})
+	app.Get("/", func(c *fiber.Ctx) error {
+		return c.SendString("API Working")
 	})
+
 	app.Get("/api/health", func(c *fiber.Ctx) error {
 		return c.SendString("ok")
 	})

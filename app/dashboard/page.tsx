@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
+import { getToken, logout } from "@/lib/auth";
 
 type Income = {
   id: string;
@@ -48,6 +49,11 @@ function fmtINR(n: number) {
 export default function DashboardPage() {
   const router = useRouter();
 
+  useEffect(() => {
+    const token = getToken();
+    if (!token) router.replace("/login");
+  }, [router]);
+
   // incomes
   const [incomes, setIncomes] = useState<Income[]>([]);
   const [incomeClient, setIncomeClient] = useState("");
@@ -65,21 +71,9 @@ export default function DashboardPage() {
   const [status, setStatus] = useState<"Live" | "Loading" | "Error">("Loading");
   const [error, setError] = useState<string>("");
 
-  function handleLogout() {
-    localStorage.removeItem("token");
-    window.location.href = "/login";
-  }
-
-  async function loadAll() {
+  const loadAll = useCallback(async () => {
     setStatus("Loading");
     setError("");
-
-    // if no token, bounce
-    const token = localStorage.getItem("token");
-    if (!token) {
-      router.push("/login");
-      return;
-    }
 
     try {
       const [inc, exp] = await Promise.all([
@@ -93,12 +87,13 @@ export default function DashboardPage() {
       setStatus("Error");
       setError(e instanceof Error ? e.message : "Failed to load data");
     }
-  }
+  }, []);
 
   useEffect(() => {
+    const token = getToken();
+    if (!token) return;
     void loadAll();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [loadAll]);
 
   const totalIncome = useMemo(
     () =>
@@ -169,7 +164,7 @@ export default function DashboardPage() {
             <h1 className="text-4xl font-bold">Dashboard</h1>
           </div>
           <button
-            onClick={handleLogout}
+            onClick={logout}
             className="rounded-lg bg-neutral-900 px-4 py-2 text-white hover:bg-neutral-800"
           >
             Logout

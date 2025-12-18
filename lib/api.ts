@@ -1,38 +1,62 @@
-export function getApiBase() {
-  const api = process.env.NEXT_PUBLIC_API_URL;
-  if (!api) {
-    throw new Error("NEXT_PUBLIC_API_URL is not set");
+import { getToken } from "./auth";
+
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL!;
+
+function headersToObject(headers: HeadersInit | undefined): Record<string, string> {
+  if (!headers) return {};
+  if (typeof Headers !== "undefined" && headers instanceof Headers) {
+    return Object.fromEntries(headers.entries());
   }
-
-  return api.replace(/\/+$/, "");
+  if (Array.isArray(headers)) {
+    return Object.fromEntries(headers);
+  }
+  return headers as Record<string, string>;
 }
 
-export function getToken() {
-  if (typeof window === "undefined") return "";
-  return localStorage.getItem("token") || "";
-}
-
-export async function apiFetch<T>(
+export async function apiFetch(path: string, options?: RequestInit): Promise<unknown>;
+export async function apiFetch<T>(path: string, options?: RequestInit): Promise<T>;
+export async function apiFetch<T = unknown>(
   path: string,
   options: RequestInit = {}
 ): Promise<T> {
-  const apiBase = getApiBase();
+  if (!BASE_URL) {
+    throw new Error("NEXT_PUBLIC_API_URL is not set");
+  }
+
   const token = getToken();
 
-  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
-  const res = await fetch(`${apiBase}${normalizedPath}`, {
+  const res = await fetch(`${BASE_URL}${path}`, {
     ...options,
     headers: {
       "Content-Type": "application/json",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(options.headers || {}),
+      ...headersToObject(options.headers),
     },
-    cache: "no-store",
   });
+
+  if (res.status === 401) {
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("token");
+      window.location.href = "/login";
+    }
+    throw new Error("Unauthorized");
+  }
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(text || `Request failed: ${res.status}`);
+    let message = text || "API error";
+    if (text) {
+      try {
+        const json = JSON.parse(text) as { error?: string };
+        if (json && typeof json.error === "string" && json.error.length > 0) {
+          message = json.error;
+        }
+      } catch {
+        // ignore parse errors
+      }
+    }
+
+    throw new Error(message);
   }
 
   return res.json() as Promise<T>;
