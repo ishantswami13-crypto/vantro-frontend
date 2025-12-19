@@ -16,6 +16,8 @@ type Router struct {
 	IncomeHandler  *income.Handler
 	ExpenseHandler *expense.Handler
 	SummaryHandler *summary.Handler
+	TxHandler      *handlers.TransactionsHandler
+	BizHandler     *handlers.BusinessHandler
 	AuthMW         fiber.Handler
 }
 
@@ -55,6 +57,28 @@ func (r *Router) RegisterRoutes(app *fiber.App) {
 			app.Get("/api/summary", r.AuthMW, r.SummaryHandler.GetSummary)
 		} else {
 			app.Get("/api/summary", r.SummaryHandler.GetSummary)
+		}
+	}
+
+	if r.TxHandler != nil {
+		if r.AuthMW != nil {
+			app.Post("/api/transactions", r.AuthMW, r.TxHandler.Create)
+			app.Get("/api/transactions/summary", r.AuthMW, r.TxHandler.Summary)
+			app.Get("/api/transactions", r.AuthMW, r.TxHandler.List)
+		} else {
+			app.Post("/api/transactions", r.TxHandler.Create)
+			app.Get("/api/transactions/summary", r.TxHandler.Summary)
+			app.Get("/api/transactions", r.TxHandler.List)
+		}
+	}
+
+	if r.BizHandler != nil {
+		if r.AuthMW != nil {
+			app.Get("/api/businesses", r.AuthMW, r.BizHandler.List)
+			app.Post("/api/businesses", r.AuthMW, r.BizHandler.Create)
+		} else {
+			app.Get("/api/businesses", r.BizHandler.List)
+			app.Post("/api/businesses", r.BizHandler.Create)
 		}
 	}
 }

@@ -82,3 +82,69 @@ COMMIT;
 -- add income/expense
 -- monthly totals (sum by date range)
 -- per-client + per-category breakdown later
+
+-- 004_transactions.sql
+
+CREATE TABLE IF NOT EXISTS transactions (
+  id BIGSERIAL PRIMARY KEY,
+  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  type TEXT NOT NULL CHECK (type IN ('income', 'expense')),
+  amount NUMERIC(12,2) NOT NULL CHECK (amount >= 0),
+  note TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_transactions_user_id_created_at
+ON transactions(user_id, created_at DESC);
+
+-- 005_businesses.sql
+
+CREATE TABLE IF NOT EXISTS businesses (
+  id BIGSERIAL PRIMARY KEY,
+  owner_user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  currency TEXT NOT NULL DEFAULT 'INR',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_businesses_owner_user_id_created_at
+ON businesses(owner_user_id, created_at DESC);
+
+ALTER TABLE transactions
+ADD COLUMN IF NOT EXISTS business_id BIGINT;
+
+-- backfill for existing rows: create a default business per user
+DO $$
+DECLARE
+  u RECORD;
+  bid BIGINT;
+BEGIN
+  FOR u IN SELECT DISTINCT user_id FROM transactions LOOP
+    INSERT INTO businesses (owner_user_id, name, currency)
+    VALUES (u.user_id, 'Default Business', 'INR')
+    ON CONFLICT DO NOTHING
+    RETURNING id INTO bid;
+
+    IF bid IS NULL THEN
+      SELECT id INTO bid
+      FROM businesses
+      WHERE owner_user_id = u.user_id
+      ORDER BY created_at ASC
+      LIMIT 1;
+    END IF;
+
+    UPDATE transactions
+    SET business_id = bid
+    WHERE user_id = u.user_id AND business_id IS NULL;
+  END LOOP;
+END $$;
+
+ALTER TABLE transactions
+ALTER COLUMN business_id SET NOT NULL;
+
+ALTER TABLE transactions
+ADD CONSTRAINT fk_transactions_business
+FOREIGN KEY (business_id) REFERENCES businesses(id) ON DELETE CASCADE;
+
+CREATE INDEX IF NOT EXISTS idx_transactions_business_created_at
+ON transactions(business_id, created_at DESC);

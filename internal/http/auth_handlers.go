@@ -141,7 +141,18 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 }
 
 func (h *AuthHandler) Me(c *fiber.Ctx) error {
-	return c.Status(fiber.StatusNotImplemented).JSON(fiber.Map{"error": "not implemented"})
+	uid := c.Locals("user_id")
+	if uid == nil {
+		uid = c.Locals("userID")
+	}
+	if uid == nil {
+		return fiber.NewError(fiber.StatusUnauthorized, "missing user")
+	}
+
+	return c.JSON(fiber.Map{
+		"user_id": uid,
+		"ok":      true,
+	})
 }
 
 func (h *AuthHandler) DebugUsers(c *fiber.Ctx) error {

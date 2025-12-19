@@ -1,372 +1,172 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import AuthGuard from "@/components/AuthGuard";
+import Navbar from "@/components/Navbar";
 import { apiFetch } from "@/lib/api";
-import { getToken, logout } from "@/lib/auth";
+import { logout } from "@/lib/auth";
 
-type Income = {
-  id: string;
-  user_id: string;
-  client_name: string;
-  amount: number;
-  currency: string;
-  received_on: string; // ISO
-  note?: string | null;
-  created_at: string; // ISO
+type Summary = {
+  income: number;
+  expense: number;
+  net: number;
 };
 
-type Expense = {
-  id: string;
-  user_id: string;
-  vendor_name: string;
+type Txn = {
+  id: number | string;
+  type: "income" | "expense";
   amount: number;
-  currency: string;
-  spent_on: string; // ISO
-  note?: string | null;
-  created_at: string; // ISO
+  note?: string;
+  created_at?: string;
 };
 
-function toYmd(d: Date) {
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
-}
-
-function fmtINR(n: number) {
+function formatINR(n: number) {
   try {
     return new Intl.NumberFormat("en-IN", {
       style: "currency",
       currency: "INR",
-      maximumFractionDigits: 2,
-    }).format(n || 0);
+      maximumFractionDigits: 0,
+    }).format(n);
   } catch {
-    return `₹${(n || 0).toFixed(2)}`;
+    return `₹${Math.round(n)}`;
   }
 }
 
 export default function DashboardPage() {
-  const router = useRouter();
+  const [summary, setSummary] = useState<Summary | null>(null);
+  const [recent, setRecent] = useState<Txn[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState("");
+
+  async function load() {
+    setErr("");
+    setLoading(true);
+    try {
+      const [s, list] = await Promise.all([
+        apiFetch<Summary>("/api/transactions/summary"),
+        apiFetch<Txn[]>("/api/transactions"),
+      ]);
+      setSummary(s);
+      setRecent(Array.isArray(list) ? list.slice(0, 8) : []);
+    } catch (e: any) {
+      setErr(e?.message || "Failed to load dashboard");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
-    const token = getToken();
-    if (!token) router.replace("/login");
-  }, [router]);
-
-  // incomes
-  const [incomes, setIncomes] = useState<Income[]>([]);
-  const [incomeClient, setIncomeClient] = useState("");
-  const [incomeAmount, setIncomeAmount] = useState<number>(5000);
-  const [incomeDate, setIncomeDate] = useState<string>(toYmd(new Date()));
-  const [incomeNote, setIncomeNote] = useState("");
-
-  // expenses
-  const [expenses, setExpenses] = useState<Expense[]>([]);
-  const [vendorName, setVendorName] = useState("");
-  const [expenseAmount, setExpenseAmount] = useState<number>(1000);
-  const [spentOn, setSpentOn] = useState<string>(toYmd(new Date()));
-  const [expenseNote, setExpenseNote] = useState("");
-
-  const [status, setStatus] = useState<"Live" | "Loading" | "Error">("Loading");
-  const [error, setError] = useState<string>("");
-
-  const loadAll = useCallback(async () => {
-    setStatus("Loading");
-    setError("");
-
-    try {
-      const [inc, exp] = await Promise.all([
-        apiFetch<Income[]>("/api/incomes"),
-        apiFetch<Expense[]>("/api/expenses"),
-      ]);
-      setIncomes(Array.isArray(inc) ? inc : []);
-      setExpenses(Array.isArray(exp) ? exp : []);
-      setStatus("Live");
-    } catch (e: unknown) {
-      setStatus("Error");
-      setError(e instanceof Error ? e.message : "Failed to load data");
-    }
+    load();
   }, []);
 
-  useEffect(() => {
-    const token = getToken();
-    if (!token) return;
-    void loadAll();
-  }, [loadAll]);
-
-  const totalIncome = useMemo(
-    () =>
-      Array.isArray(incomes)
-        ? incomes.reduce((sum, x) => sum + (x.amount || 0), 0)
-        : 0,
-    [incomes]
-  );
-
-  const totalExpense = useMemo(
-    () =>
-      Array.isArray(expenses)
-        ? expenses.reduce((sum, x) => sum + (x.amount || 0), 0)
-        : 0,
-    [expenses]
-  );
-
-  const net = useMemo(() => totalIncome - totalExpense, [totalIncome, totalExpense]);
-
-  async function addIncome() {
-    setError("");
-    try {
-      await apiFetch<{ id: string; message: string }>("/api/incomes", {
-        method: "POST",
-        body: JSON.stringify({
-          client_name: incomeClient || "Client A",
-          amount: Number(incomeAmount || 0),
-          received_on: incomeDate,
-          note: incomeNote || "",
-        }),
-      });
-
-      setIncomeClient("");
-      setIncomeNote("");
-      await loadAll();
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Failed to add income");
-    }
-  }
-
-  async function addExpense() {
-    setError("");
-    try {
-      await apiFetch<{ id: string; message: string }>("/api/expenses", {
-        method: "POST",
-        body: JSON.stringify({
-          vendor_name: vendorName || "Vendor A",
-          amount: Number(expenseAmount || 0),
-          spent_on: spentOn,
-          note: expenseNote || "",
-        }),
-      });
-
-      setVendorName("");
-      setExpenseNote("");
-      await loadAll();
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Failed to add expense");
-    }
-  }
+  const income = summary?.income ?? 0;
+  const expense = summary?.expense ?? 0;
+  const net = summary?.net ?? 0;
 
   return (
-    <div className="min-h-screen bg-black text-white">
-      <div className="mx-auto max-w-6xl px-6 py-10">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <div className="text-sm tracking-widest text-neutral-400">VANTRO</div>
-            <h1 className="text-4xl font-bold">Dashboard</h1>
-          </div>
-          <button
-            onClick={logout}
-            className="rounded-lg bg-neutral-900 px-4 py-2 text-white hover:bg-neutral-800"
-          >
-            Logout
-          </button>
-        </div>
+    <AuthGuard>
+      <div className="min-h-screen bg-black text-white">
+        <Navbar />
 
-        {error ? (
-          <div className="mt-6 rounded-lg border border-red-700/40 bg-red-900/20 p-4 text-red-200">
-            {error}
-          </div>
-        ) : null}
-
-        {/* cards */}
-        <div className="mt-8 grid gap-4 md:grid-cols-4">
-          <div className="rounded-2xl bg-neutral-900 p-6">
-            <div className="text-sm text-neutral-400">Total Income</div>
-            <div className="mt-2 text-3xl font-semibold">{fmtINR(totalIncome)}</div>
-          </div>
-
-          <div className="rounded-2xl bg-neutral-900 p-6">
-            <div className="text-sm text-neutral-400">Total Expense</div>
-            <div className="mt-2 text-3xl font-semibold">{fmtINR(totalExpense)}</div>
-          </div>
-
-          <div className="rounded-2xl bg-neutral-900 p-6">
-            <div className="text-sm text-neutral-400">Net</div>
-            <div className="mt-2 text-3xl font-semibold">{fmtINR(net)}</div>
-          </div>
-
-          <div className="rounded-2xl bg-neutral-900 p-6">
-            <div className="text-sm text-neutral-400">Status</div>
-            <div className="mt-2 text-3xl font-semibold">{status}</div>
-          </div>
-        </div>
-
-        {/* Add income */}
-        <div className="mt-8 rounded-2xl bg-neutral-900 p-6">
-          <h2 className="text-2xl font-semibold">Add Income</h2>
-
-          <div className="mt-4 grid gap-3 md:grid-cols-4">
-            <input
-              className="rounded-lg bg-neutral-800 px-3 py-2 outline-none"
-              placeholder="Client name (e.g. Client A)"
-              value={incomeClient}
-              onChange={(e) => setIncomeClient(e.target.value)}
-            />
-            <input
-              className="rounded-lg bg-neutral-800 px-3 py-2 outline-none"
-              type="number"
-              value={incomeAmount}
-              onChange={(e) => setIncomeAmount(Number(e.target.value))}
-            />
-            <input
-              className="rounded-lg bg-neutral-800 px-3 py-2 outline-none"
-              type="date"
-              value={incomeDate}
-              onChange={(e) => setIncomeDate(e.target.value)}
-            />
-            <button
-              onClick={addIncome}
-              className="rounded-lg bg-white px-4 py-2 font-medium text-black hover:bg-neutral-200"
-            >
-              Add
-            </button>
-          </div>
-
-          <input
-            className="mt-3 w-full rounded-lg bg-neutral-800 px-3 py-2 outline-none"
-            placeholder="Note (optional)"
-            value={incomeNote}
-            onChange={(e) => setIncomeNote(e.target.value)}
-          />
-        </div>
-
-        {/* Add expense */}
-        <div className="mt-6 rounded-2xl bg-neutral-900 p-6">
-          <h2 className="text-2xl font-semibold">Add Expense</h2>
-
-          <div className="mt-4 grid gap-3 md:grid-cols-4">
-            <input
-              className="rounded-lg bg-neutral-800 px-3 py-2 outline-none"
-              placeholder="Vendor name (e.g. Rent, Zomato, Petrol)"
-              value={vendorName}
-              onChange={(e) => setVendorName(e.target.value)}
-            />
-            <input
-              className="rounded-lg bg-neutral-800 px-3 py-2 outline-none"
-              type="number"
-              value={expenseAmount}
-              onChange={(e) => setExpenseAmount(Number(e.target.value))}
-            />
-            <input
-              className="rounded-lg bg-neutral-800 px-3 py-2 outline-none"
-              type="date"
-              value={spentOn}
-              onChange={(e) => setSpentOn(e.target.value)}
-            />
-            <button
-              onClick={addExpense}
-              className="rounded-lg bg-white px-4 py-2 font-medium text-black hover:bg-neutral-200"
-            >
-              Add
-            </button>
-          </div>
-
-          <input
-            className="mt-3 w-full rounded-lg bg-neutral-800 px-3 py-2 outline-none"
-            placeholder="Note (optional)"
-            value={expenseNote}
-            onChange={(e) => setExpenseNote(e.target.value)}
-          />
-        </div>
-
-        {/* lists */}
-        <div className="mt-8 grid gap-6 md:grid-cols-2">
-          <div className="rounded-2xl bg-neutral-900 p-6">
-            <div className="flex items-center justify-between">
-              <h3 className="text-xl font-semibold">Your Incomes</h3>
+        <div className="max-w-4xl mx-auto p-6 space-y-6">
+          <div className="flex items-center justify-between">
+            <h1 className="text-2xl font-bold">Dashboard</h1>
+            <div className="flex gap-3">
+              <Link
+                href="/transactions"
+                className="px-4 py-2 rounded bg-white text-black hover:opacity-90"
+              >
+                Add / View Transactions
+              </Link>
               <button
-                onClick={loadAll}
-                className="rounded-lg bg-neutral-800 px-3 py-2 hover:bg-neutral-700"
+                onClick={load}
+                className="px-4 py-2 rounded border border-neutral-700 hover:border-neutral-500"
               >
                 Refresh
               </button>
-            </div>
-
-            <div className="mt-4 overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead className="text-neutral-400">
-                  <tr>
-                    <th className="py-2">Client</th>
-                    <th className="py-2">Amount</th>
-                    <th className="py-2">Received</th>
-                    <th className="py-2">Note</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {incomes.length === 0 ? (
-                    <tr>
-                      <td className="py-4 text-neutral-400" colSpan={4}>
-                        No incomes yet.
-                      </td>
-                    </tr>
-                  ) : (
-                    incomes.map((x) => (
-                      <tr key={x.id} className="border-t border-neutral-800">
-                        <td className="py-3">{x.client_name}</td>
-                        <td className="py-3">{fmtINR(x.amount)}</td>
-                        <td className="py-3">{String(x.received_on).slice(0, 10)}</td>
-                        <td className="py-3 text-neutral-300">{x.note || ""}</td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <div className="rounded-2xl bg-neutral-900 p-6">
-            <div className="flex items-center justify-between">
-              <h3 className="text-xl font-semibold">Your Expenses</h3>
               <button
-                onClick={loadAll}
-                className="rounded-lg bg-neutral-800 px-3 py-2 hover:bg-neutral-700"
+                onClick={logout}
+                className="px-4 py-2 rounded border border-neutral-700"
               >
-                Refresh
+                Logout
               </button>
             </div>
-
-            <div className="mt-4 overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead className="text-neutral-400">
-                  <tr>
-                    <th className="py-2">Vendor</th>
-                    <th className="py-2">Amount</th>
-                    <th className="py-2">Spent</th>
-                    <th className="py-2">Note</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {expenses.length === 0 ? (
-                    <tr>
-                      <td className="py-4 text-neutral-400" colSpan={4}>
-                        No expenses yet.
-                      </td>
-                    </tr>
-                  ) : (
-                    expenses.map((x) => (
-                      <tr key={x.id} className="border-t border-neutral-800">
-                        <td className="py-3">{x.vendor_name}</td>
-                        <td className="py-3">{fmtINR(x.amount)}</td>
-                        <td className="py-3">{String(x.spent_on).slice(0, 10)}</td>
-                        <td className="py-3 text-neutral-300">{x.note || ""}</td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
           </div>
+
+          {err ? (
+            <div className="bg-red-900/40 border border-red-500/40 p-3 rounded">
+              {err}
+            </div>
+          ) : null}
+
+          {/* Summary cards */}
+          <section className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="bg-neutral-900 border border-neutral-800 rounded-lg p-4">
+              <div className="text-sm text-neutral-400">Income</div>
+              <div className="text-xl font-semibold">
+                {loading ? "..." : formatINR(income)}
+              </div>
+            </div>
+
+            <div className="bg-neutral-900 border border-neutral-800 rounded-lg p-4">
+              <div className="text-sm text-neutral-400">Expense</div>
+              <div className="text-xl font-semibold">
+                {loading ? "..." : formatINR(expense)}
+              </div>
+            </div>
+
+            <div className="bg-neutral-900 border border-neutral-800 rounded-lg p-4">
+              <div className="text-sm text-neutral-400">Net</div>
+              <div
+                className={`text-xl font-semibold ${
+                  net >= 0 ? "text-green-400" : "text-red-400"
+                }`}
+              >
+                {loading ? "..." : formatINR(net)}
+              </div>
+            </div>
+          </section>
+
+          {/* Recent transactions */}
+          <section className="bg-neutral-900 border border-neutral-800 rounded-lg p-5">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-lg font-semibold">Recent</h2>
+              <Link href="/transactions" className="text-sm text-neutral-300 hover:text-white">
+                View all →
+              </Link>
+            </div>
+
+            {loading ? (
+              <div className="text-neutral-400">Loading...</div>
+            ) : recent.length === 0 ? (
+              <div className="text-neutral-400">No transactions yet.</div>
+            ) : (
+              <div className="divide-y divide-neutral-800">
+                {recent.map((t) => (
+                  <div key={String(t.id)} className="py-3 flex justify-between gap-4">
+                    <div>
+                      <div className="font-medium">
+                        <span className={t.type === "income" ? "text-green-400" : "text-red-400"}>
+                          {t.type.toUpperCase()}
+                        </span>
+                        <span className="text-neutral-400"> · </span>
+                        <span>{formatINR(Number(t.amount || 0))}</span>
+                      </div>
+                      {t.note ? <div className="text-sm text-neutral-400">{t.note}</div> : null}
+                    </div>
+
+                    <div className="text-xs text-neutral-500">
+                      {t.created_at ? new Date(t.created_at).toLocaleString() : ""}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
         </div>
       </div>
-    </div>
+    </AuthGuard>
   );
 }
+

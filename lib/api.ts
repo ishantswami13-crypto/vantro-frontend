@@ -1,6 +1,6 @@
-import { getToken } from "./auth";
+import { logout } from "./auth";
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL!;
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL;
 
 function headersToObject(headers: HeadersInit | undefined): Record<string, string> {
   if (!headers) return {};
@@ -13,17 +13,12 @@ function headersToObject(headers: HeadersInit | undefined): Record<string, strin
   return headers as Record<string, string>;
 }
 
-export async function apiFetch(path: string, options?: RequestInit): Promise<unknown>;
-export async function apiFetch<T>(path: string, options?: RequestInit): Promise<T>;
-export async function apiFetch<T = unknown>(
-  path: string,
-  options: RequestInit = {}
-): Promise<T> {
+export async function apiFetch<T = any>(path: string, options: RequestInit = {}): Promise<T> {
   if (!BASE_URL) {
     throw new Error("NEXT_PUBLIC_API_URL is not set");
   }
 
-  const token = getToken();
+  const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
 
   const res = await fetch(`${BASE_URL}${path}`, {
     ...options,
@@ -34,30 +29,22 @@ export async function apiFetch<T = unknown>(
     },
   });
 
-  if (res.status === 401) {
-    if (typeof window !== "undefined") {
-      localStorage.removeItem("token");
-      window.location.href = "/login";
-    }
-    throw new Error("Unauthorized");
+  const text = await res.text();
+  let data: any = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = text;
   }
 
   if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    let message = text || "API error";
-    if (text) {
-      try {
-        const json = JSON.parse(text) as { error?: string };
-        if (json && typeof json.error === "string" && json.error.length > 0) {
-          message = json.error;
-        }
-      } catch {
-        // ignore parse errors
-      }
-    }
-
-    throw new Error(message);
+    if (res.status === 401) logout();
+    const msg =
+      (data && (data.error || data.message)) ||
+      (typeof data === "string" ? data : "") ||
+      `Request failed (${res.status})`;
+    throw new Error(msg);
   }
 
-  return res.json() as Promise<T>;
+  return data as T;
 }

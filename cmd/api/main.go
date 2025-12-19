@@ -78,6 +78,8 @@ func main() {
 	expenseHandler := expense.NewHandler(expenseRepo)
 	summaryRepo := summary.Repo{DB: pool}
 	summaryHandler := &summary.Handler{Repo: summaryRepo}
+	txHandler := apphttp.NewTransactionsHandler(pool)
+	bizHandler := apphttp.NewBusinessHandler(pool)
 
 	authMiddleware := buildJWTMiddleware()
 
@@ -86,6 +88,8 @@ func main() {
 		IncomeHandler:  incomeHandler,
 		ExpenseHandler: expenseHandler,
 		SummaryHandler: summaryHandler,
+		TxHandler:      txHandler,
+		BizHandler:     bizHandler,
 		AuthMW:         authMiddleware,
 	}
 	r.RegisterRoutes(app)
