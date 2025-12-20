@@ -9,6 +9,7 @@ import (
 	handlers "github.com/ishantswami13-crypto/vantro-backend/internal/http"
 	"github.com/ishantswami13-crypto/vantro-backend/internal/income"
 	"github.com/ishantswami13-crypto/vantro-backend/internal/summary"
+	"github.com/ishantswami13-crypto/vantro-backend/internal/transactions"
 )
 
 type Router struct {
@@ -17,6 +18,7 @@ type Router struct {
 	ExpenseHandler *expense.Handler
 	SummaryHandler *summary.Handler
 	TxHandler      *handlers.TransactionsHandler
+	TxnHandler     *transactions.Handler
 	BizHandler     *handlers.BusinessHandler
 	AuthMW         fiber.Handler
 }
@@ -57,6 +59,18 @@ func (r *Router) RegisterRoutes(app *fiber.App) {
 			app.Get("/api/summary", r.AuthMW, r.SummaryHandler.GetSummary)
 		} else {
 			app.Get("/api/summary", r.SummaryHandler.GetSummary)
+		}
+	}
+
+	if r.TxnHandler != nil {
+		if r.AuthMW != nil {
+			app.Post("/api/transactions", r.AuthMW, r.TxnHandler.Create)
+			app.Get("/api/transactions", r.AuthMW, r.TxnHandler.List)
+			app.Get("/api/transactions/summary", r.AuthMW, r.TxnHandler.Summary)
+		} else {
+			app.Post("/api/transactions", r.TxnHandler.Create)
+			app.Get("/api/transactions", r.TxnHandler.List)
+			app.Get("/api/transactions/summary", r.TxnHandler.Summary)
 		}
 	}
 

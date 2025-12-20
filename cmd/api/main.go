@@ -17,6 +17,7 @@ import (
 	"github.com/ishantswami13-crypto/vantro-backend/internal/income"
 	"github.com/ishantswami13-crypto/vantro-backend/internal/router"
 	"github.com/ishantswami13-crypto/vantro-backend/internal/summary"
+	"github.com/ishantswami13-crypto/vantro-backend/internal/transactions"
 )
 
 func main() {
@@ -78,19 +79,20 @@ func main() {
 	expenseHandler := expense.NewHandler(expenseRepo)
 	summaryRepo := summary.Repo{DB: pool}
 	summaryHandler := &summary.Handler{Repo: summaryRepo}
-	txHandler := apphttp.NewTransactionsHandler(pool)
 	bizHandler := apphttp.NewBusinessHandler(pool)
+	txnRepo := transactions.NewRepo(pool)
+	txnHandler := transactions.NewHandler(txnRepo)
 
-	authMiddleware := buildJWTMiddleware()
+	jwtMiddleware := buildJWTMiddleware()
 
 	r := &router.Router{
 		AuthHandler:    authHandler,
 		IncomeHandler:  incomeHandler,
 		ExpenseHandler: expenseHandler,
 		SummaryHandler: summaryHandler,
-		TxHandler:      txHandler,
+		TxnHandler:     txnHandler,
 		BizHandler:     bizHandler,
-		AuthMW:         authMiddleware,
+		AuthMW:         jwtMiddleware,
 	}
 	r.RegisterRoutes(app)
 

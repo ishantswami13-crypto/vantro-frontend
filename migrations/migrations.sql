@@ -142,9 +142,44 @@ END $$;
 ALTER TABLE transactions
 ALTER COLUMN business_id SET NOT NULL;
 
-ALTER TABLE transactions
-ADD CONSTRAINT fk_transactions_business
-FOREIGN KEY (business_id) REFERENCES businesses(id) ON DELETE CASCADE;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.table_constraints
+    WHERE constraint_name = 'fk_transactions_business'
+      AND table_name = 'transactions'
+      AND table_schema = 'public'
+  ) THEN
+    ALTER TABLE transactions
+    ADD CONSTRAINT fk_transactions_business
+    FOREIGN KEY (business_id) REFERENCES businesses(id) ON DELETE CASCADE;
+  END IF;
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_transactions_business_created_at
 ON transactions(business_id, created_at DESC);
+
+-- Transactions table
+CREATE TABLE IF NOT EXISTS transactions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL,
+    type TEXT NOT NULL CHECK (type IN ('income', 'expense')),
+    amount NUMERIC(12,2) NOT NULL,
+    description TEXT,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- TRANSACTIONS (UUID user_id)
+-- Requires pgcrypto for gen_random_uuid (you already enabled it earlier)
+
+CREATE TABLE IF NOT EXISTS transactions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  type TEXT NOT NULL CHECK (type IN ('income','expense')),
+  amount BIGINT NOT NULL CHECK (amount >= 0), -- store amount in smallest unit (paise) if you want; else treat as rupees
+  note TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_transactions_user_id_created_at
+ON transactions(user_id, created_at DESC);
