@@ -6,12 +6,14 @@ import (
 	"log"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/ishantswami13-crypto/vantro-backend/internal/admin"
 	"github.com/ishantswami13-crypto/vantro-backend/internal/expense"
 	apphttp "github.com/ishantswami13-crypto/vantro-backend/internal/http"
 	"github.com/ishantswami13-crypto/vantro-backend/internal/income"
@@ -82,8 +84,10 @@ func main() {
 	bizHandler := apphttp.NewBusinessHandler(pool)
 	txnRepo := transactions.NewRepo(pool)
 	txnHandler := transactions.NewHandler(txnRepo)
+	adminHandler := admin.NewHandler(pool)
+	adminMW := admin.RequireAdminAPIKey()
 
-	jwtMiddleware := buildJWTMiddleware()
+	authMiddleware := buildJWTMiddleware(pool)
 
 	r := &router.Router{
 		AuthHandler:    authHandler,
@@ -92,7 +96,9 @@ func main() {
 		SummaryHandler: summaryHandler,
 		TxnHandler:     txnHandler,
 		BizHandler:     bizHandler,
-		AuthMW:         jwtMiddleware,
+		AdminHandler:   adminHandler,
+		AuthMW:         authMiddleware,
+		AdminMW:        adminMW,
 	}
 	r.RegisterRoutes(app)
 
@@ -101,7 +107,7 @@ func main() {
 	}
 }
 
-func buildJWTMiddleware() fiber.Handler {
+func buildJWTMiddleware(pool *pgxpool.Pool) fiber.Handler {
 	secret := []byte(os.Getenv("JWT_SECRET"))
 	if len(secret) == 0 {
 		secret = []byte("supersecretapikey")
@@ -140,6 +146,13 @@ func buildJWTMiddleware() fiber.Handler {
 
 		c.Locals("user_id", userIDVal)
 		c.Locals("userID", userIDVal)
+
+		// Update last_seen_at (best-effort, do not block request)
+		go func(uid string) {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			_, _ = pool.Exec(ctx, `UPDATE users SET last_seen_at = NOW() WHERE id = $1::uuid`, uid)
+		}(userIDVal)
 
 		return c.Next()
 	}

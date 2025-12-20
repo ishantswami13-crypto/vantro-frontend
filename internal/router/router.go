@@ -1,10 +1,12 @@
 package router
 
 import (
-	"github.com/gofiber/fiber/v2"
 	"os"
 	"strings"
 
+	"github.com/gofiber/fiber/v2"
+
+	"github.com/ishantswami13-crypto/vantro-backend/internal/admin"
 	"github.com/ishantswami13-crypto/vantro-backend/internal/expense"
 	handlers "github.com/ishantswami13-crypto/vantro-backend/internal/http"
 	"github.com/ishantswami13-crypto/vantro-backend/internal/income"
@@ -20,7 +22,9 @@ type Router struct {
 	TxHandler      *handlers.TransactionsHandler
 	TxnHandler     *transactions.Handler
 	BizHandler     *handlers.BusinessHandler
+	AdminHandler   *admin.Handler
 	AuthMW         fiber.Handler
+	AdminMW        fiber.Handler
 }
 
 func (r *Router) RegisterRoutes(app *fiber.App) {
@@ -94,5 +98,10 @@ func (r *Router) RegisterRoutes(app *fiber.App) {
 			app.Get("/api/businesses", r.BizHandler.List)
 			app.Post("/api/businesses", r.BizHandler.Create)
 		}
+	}
+
+	if r.AdminHandler != nil && r.AdminMW != nil {
+		app.Get("/api/admin/users", r.AdminMW, r.AdminHandler.ListUsers)
+		app.Get("/api/admin/stats", r.AdminMW, r.AdminHandler.Stats)
 	}
 }
