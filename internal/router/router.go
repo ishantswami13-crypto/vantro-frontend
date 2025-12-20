@@ -15,16 +15,16 @@ import (
 )
 
 type Router struct {
-	AuthHandler    *handlers.AuthHandler
-	IncomeHandler  *income.Handler
-	ExpenseHandler *expense.Handler
-	SummaryHandler *summary.Handler
-	TxHandler      *handlers.TransactionsHandler
-	TxnHandler     *transactions.Handler
-	BizHandler     *handlers.BusinessHandler
-	AdminHandler   *admin.Handler
-	AuthMW         fiber.Handler
-	AdminMW        fiber.Handler
+	AuthHandler         *handlers.AuthHandler
+	IncomeHandler       *income.Handler
+	ExpenseHandler      *expense.Handler
+	SummaryHandler      *summary.Handler
+	TxHandler           *handlers.TransactionsHandler
+	TransactionsHandler *transactions.Handler
+	BizHandler          *handlers.BusinessHandler
+	AdminHandler        *admin.Handler
+	AuthMW              fiber.Handler
+	AdminMW             fiber.Handler
 }
 
 func (r *Router) RegisterRoutes(app *fiber.App) {
@@ -50,10 +50,10 @@ func (r *Router) RegisterRoutes(app *fiber.App) {
 
 	if r.ExpenseHandler != nil {
 		if r.AuthMW != nil {
-			app.Post("/api/expenses", r.AuthMW, r.ExpenseHandler.AddExpense)
+			app.Post("/api/expenses", r.AuthMW, r.ExpenseHandler.CreateExpense)
 			app.Get("/api/expenses", r.AuthMW, r.ExpenseHandler.ListExpenses)
 		} else {
-			app.Post("/api/expenses", r.ExpenseHandler.AddExpense)
+			app.Post("/api/expenses", r.ExpenseHandler.CreateExpense)
 			app.Get("/api/expenses", r.ExpenseHandler.ListExpenses)
 		}
 	}
@@ -63,18 +63,6 @@ func (r *Router) RegisterRoutes(app *fiber.App) {
 			app.Get("/api/summary", r.AuthMW, r.SummaryHandler.GetSummary)
 		} else {
 			app.Get("/api/summary", r.SummaryHandler.GetSummary)
-		}
-	}
-
-	if r.TxnHandler != nil {
-		if r.AuthMW != nil {
-			app.Post("/api/transactions", r.AuthMW, r.TxnHandler.Create)
-			app.Get("/api/transactions", r.AuthMW, r.TxnHandler.List)
-			app.Get("/api/transactions/summary", r.AuthMW, r.TxnHandler.Summary)
-		} else {
-			app.Post("/api/transactions", r.TxnHandler.Create)
-			app.Get("/api/transactions", r.TxnHandler.List)
-			app.Get("/api/transactions/summary", r.TxnHandler.Summary)
 		}
 	}
 
@@ -97,6 +85,16 @@ func (r *Router) RegisterRoutes(app *fiber.App) {
 		} else {
 			app.Get("/api/businesses", r.BizHandler.List)
 			app.Post("/api/businesses", r.BizHandler.Create)
+		}
+	}
+
+	if r.TransactionsHandler != nil {
+		if r.AuthMW != nil {
+			app.Get("/api/transactions", r.AuthMW, r.TransactionsHandler.ListLatest)
+			app.Get("/api/transactions/summary", r.AuthMW, r.TransactionsHandler.GetSummary)
+		} else {
+			app.Get("/api/transactions", r.TransactionsHandler.ListLatest)
+			app.Get("/api/transactions/summary", r.TransactionsHandler.GetSummary)
 		}
 	}
 

@@ -77,7 +77,7 @@ func main() {
 	authHandler := &apphttp.AuthHandler{DB: pool}
 	incomeRepo := income.NewRepository(pool)
 	incomeHandler := income.NewHandler(incomeRepo)
-	expenseRepo := expense.NewRepo(pool)
+	expenseRepo := expense.NewRepository(pool)
 	expenseHandler := expense.NewHandler(expenseRepo)
 	summaryRepo := summary.Repo{DB: pool}
 	summaryHandler := &summary.Handler{Repo: summaryRepo}
@@ -90,15 +90,15 @@ func main() {
 	authMiddleware := buildJWTMiddleware(pool)
 
 	r := &router.Router{
-		AuthHandler:    authHandler,
-		IncomeHandler:  incomeHandler,
-		ExpenseHandler: expenseHandler,
-		SummaryHandler: summaryHandler,
-		TxnHandler:     txnHandler,
-		BizHandler:     bizHandler,
-		AdminHandler:   adminHandler,
-		AuthMW:         authMiddleware,
-		AdminMW:        adminMW,
+		AuthHandler:         authHandler,
+		IncomeHandler:       incomeHandler,
+		ExpenseHandler:      expenseHandler,
+		SummaryHandler:      summaryHandler,
+		TransactionsHandler: txnHandler,
+		BizHandler:          bizHandler,
+		AdminHandler:        adminHandler,
+		AuthMW:              authMiddleware,
+		AdminMW:             adminMW,
 	}
 	r.RegisterRoutes(app)
 

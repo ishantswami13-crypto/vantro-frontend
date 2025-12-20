@@ -10,34 +10,30 @@ import (
 )
 
 type Handler struct {
-	Repo *Repo
+	Repo *Repository
 }
 
-func NewHandler(repo *Repo) *Handler {
+func NewHandler(repo *Repository) *Handler {
 	return &Handler{Repo: repo}
 }
 
-type createExpenseReq struct {
-	VendorName string `json:"vendor_name"`
-	Amount     int64  `json:"amount"`
-	SpentOn    string `json:"spent_on"` // YYYY-MM-DD
-	Note       string `json:"note"`
-}
-
-func (h *Handler) AddExpense(c *fiber.Ctx) error {
+func (h *Handler) CreateExpense(c *fiber.Ctx) error {
 	userID, err := extractUserID(c)
 	if err != nil {
-		return fiber.NewError(fiber.StatusUnauthorized, "missing user")
+		return fiber.NewError(fiber.StatusUnauthorized, "unauthorized")
 	}
 
-	var req createExpenseReq
+	var req CreateExpenseRequest
 	if err := c.BodyParser(&req); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, "invalid body")
 	}
 
 	req.VendorName = strings.TrimSpace(req.VendorName)
-	if req.VendorName == "" || req.Amount <= 0 || strings.TrimSpace(req.SpentOn) == "" {
-		return fiber.NewError(fiber.StatusBadRequest, "vendor_name, amount, spent_on required")
+	if req.VendorName == "" {
+		return fiber.NewError(fiber.StatusBadRequest, "vendor_name required")
+	}
+	if req.Amount <= 0 {
+		return fiber.NewError(fiber.StatusBadRequest, "amount must be greater than zero")
 	}
 
 	spentOn, err := time.Parse("2006-01-02", req.SpentOn)
@@ -45,18 +41,24 @@ func (h *Handler) AddExpense(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusBadRequest, "spent_on must be YYYY-MM-DD")
 	}
 
-	var notePtr *string
-	if strings.TrimSpace(req.Note) != "" {
-		n := req.Note
-		notePtr = &n
+	exp := &Expense{
+		UserID:     userID,
+		VendorName: req.VendorName,
+		Amount:     req.Amount,
+		Currency:   "INR",
+		SpentOn:    spentOn,
+		Note:       req.Note,
 	}
 
-	id, err := h.Repo.AddExpense(userContext(c), userID, req.VendorName, req.Amount, spentOn, notePtr)
+	id, err := h.Repo.InsertExpense(userContext(c), exp)
 	if err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "failed to add expense: "+err.Error())
 	}
 
-	return c.JSON(fiber.Map{"id": id, "message": "expense added"})
+	return c.Status(fiber.StatusCreated).JSON(CreateExpenseResponse{
+		ID:      id,
+		Message: "expense added",
+	})
 }
 
 func (h *Handler) ListExpenses(c *fiber.Ctx) error {

@@ -68,6 +68,7 @@ END $$;
 
 CREATE INDEX IF NOT EXISTS idx_expenses_user_date ON expenses(user_id, spent_on DESC);
 CREATE INDEX IF NOT EXISTS idx_expenses_user_category ON expenses(user_id, category);
+CREATE INDEX IF NOT EXISTS idx_expenses_user_id_created_at ON expenses(user_id, created_at DESC);
 
 COMMIT;
 
