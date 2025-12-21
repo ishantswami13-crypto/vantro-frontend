@@ -84,9 +84,7 @@ func main() {
 	bizHandler := apphttp.NewBusinessHandler(pool)
 	txnRepo := transactions.NewRepo(pool)
 	txnHandler := transactions.NewHandler(txnRepo)
-	adminKey := os.Getenv("ADMIN_KEY")
-	adminHandler := admin.NewHandler(pool, adminKey)
-	adminMW := admin.RequireAdminAPIKey()
+	adminHandler := admin.NewHandler(pool)
 
 	authMiddleware := buildJWTMiddleware(pool)
 
@@ -99,7 +97,6 @@ func main() {
 		BizHandler:          bizHandler,
 		AdminHandler:        adminHandler,
 		AuthMW:              authMiddleware,
-		AdminMW:             adminMW,
 	}
 	r.RegisterRoutes(app)
 

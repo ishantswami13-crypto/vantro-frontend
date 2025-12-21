@@ -24,7 +24,6 @@ type Router struct {
 	BizHandler          *handlers.BusinessHandler
 	AdminHandler        *admin.Handler
 	AuthMW              fiber.Handler
-	AdminMW             fiber.Handler
 }
 
 func (r *Router) RegisterRoutes(app *fiber.App) {
@@ -96,11 +95,6 @@ func (r *Router) RegisterRoutes(app *fiber.App) {
 			app.Get("/api/transactions", r.TransactionsHandler.ListLatest)
 			app.Get("/api/transactions/summary", r.TransactionsHandler.GetSummary)
 		}
-	}
-
-	if r.AdminHandler != nil && r.AdminMW != nil {
-		app.Get("/api/admin/users", r.AdminMW, r.AdminHandler.ListUsers)
-		app.Get("/api/admin/stats", r.AdminMW, r.AdminHandler.Stats)
 	}
 
 	if r.AdminHandler != nil {
