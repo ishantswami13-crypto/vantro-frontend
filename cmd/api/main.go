@@ -84,6 +84,7 @@ func main() {
 	bizHandler := apphttp.NewBusinessHandler(pool)
 	txnRepo := transactions.NewRepo(pool)
 	txnHandler := transactions.NewHandler(txnRepo)
+	onboardingHandler := &apphttp.OnboardingHandler{DB: pool}
 	adminHandler := admin.NewHandler(pool)
 
 	authMiddleware := buildJWTMiddleware(pool)
@@ -96,6 +97,7 @@ func main() {
 		TransactionsHandler: txnHandler,
 		BizHandler:          bizHandler,
 		AdminHandler:        adminHandler,
+		OnboardingHandler:   onboardingHandler,
 		AuthMW:              authMiddleware,
 	}
 	r.RegisterRoutes(app)

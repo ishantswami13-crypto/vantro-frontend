@@ -105,6 +105,10 @@ ALTER TABLE users
 ALTER TABLE users
   ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ;
 
+-- Onboarding status
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS onboarding_step TEXT NOT NULL DEFAULT 'start';
+
 -- Helpful index
 CREATE INDEX IF NOT EXISTS idx_users_created_at ON users(created_at DESC);
 

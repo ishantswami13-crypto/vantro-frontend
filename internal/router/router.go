@@ -23,6 +23,7 @@ type Router struct {
 	TransactionsHandler *transactions.Handler
 	BizHandler          *handlers.BusinessHandler
 	AdminHandler        *admin.Handler
+	OnboardingHandler   *handlers.OnboardingHandler
 	AuthMW              fiber.Handler
 }
 
@@ -91,13 +92,25 @@ func (r *Router) RegisterRoutes(app *fiber.App) {
 		if r.AuthMW != nil {
 			app.Get("/api/transactions", r.AuthMW, r.TransactionsHandler.ListLatest)
 			app.Get("/api/transactions/summary", r.AuthMW, r.TransactionsHandler.GetSummary)
+			app.Get("/api/export/transactions.csv", r.AuthMW, r.TransactionsHandler.ExportCSV)
+			app.Delete("/api/transactions/:type/:id", r.AuthMW, r.TransactionsHandler.Delete)
 		} else {
 			app.Get("/api/transactions", r.TransactionsHandler.ListLatest)
 			app.Get("/api/transactions/summary", r.TransactionsHandler.GetSummary)
+			app.Get("/api/export/transactions.csv", r.TransactionsHandler.ExportCSV)
+			app.Delete("/api/transactions/:type/:id", r.TransactionsHandler.Delete)
 		}
 	}
 
 	if r.AdminHandler != nil {
 		app.Get("/api/admin/overview", r.AdminHandler.Overview)
+	}
+
+	if r.OnboardingHandler != nil {
+		if r.AuthMW != nil {
+			app.Post("/api/onboarding/step", r.AuthMW, r.OnboardingHandler.UpdateStep)
+		} else {
+			app.Post("/api/onboarding/step", r.OnboardingHandler.UpdateStep)
+		}
 	}
 }

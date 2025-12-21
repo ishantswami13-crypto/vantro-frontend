@@ -15,7 +15,7 @@ func NewRepo(pool *pgxpool.Pool) *Repo {
 }
 
 func (r *Repo) ListLatest(ctx context.Context, userID string, limit int) ([]TxItem, error) {
-	if limit <= 0 || limit > 200 {
+	if limit <= 0 || limit > 1000 {
 		limit = 50
 	}
 

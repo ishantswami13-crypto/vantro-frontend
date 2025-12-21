@@ -141,18 +141,18 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 }
 
 func (h *AuthHandler) Me(c *fiber.Ctx) error {
-	uid := c.Locals("user_id")
-	if uid == nil {
-		uid = c.Locals("userID")
-	}
-	if uid == nil {
+	uid := getUserID(c)
+	if uid == "" {
 		return fiber.NewError(fiber.StatusUnauthorized, "missing user")
 	}
 
-	return c.JSON(fiber.Map{
-		"user_id": uid,
-		"ok":      true,
-	})
+	var step string
+	ctx := userContext(c)
+	if err := h.DB.QueryRow(ctx, `SELECT onboarding_step FROM users WHERE id = $1`, uid).Scan(&step); err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "failed to fetch user")
+	}
+
+	return c.JSON(fiber.Map{"user_id": uid, "ok": true, "onboarding_step": step})
 }
 
 func (h *AuthHandler) DebugUsers(c *fiber.Ctx) error {
