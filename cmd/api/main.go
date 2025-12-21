@@ -84,7 +84,8 @@ func main() {
 	bizHandler := apphttp.NewBusinessHandler(pool)
 	txnRepo := transactions.NewRepo(pool)
 	txnHandler := transactions.NewHandler(txnRepo)
-	adminHandler := admin.NewHandler(pool)
+	adminKey := os.Getenv("ADMIN_KEY")
+	adminHandler := admin.NewHandler(pool, adminKey)
 	adminMW := admin.RequireAdminAPIKey()
 
 	authMiddleware := buildJWTMiddleware(pool)

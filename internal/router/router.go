@@ -102,4 +102,8 @@ func (r *Router) RegisterRoutes(app *fiber.App) {
 		app.Get("/api/admin/users", r.AdminMW, r.AdminHandler.ListUsers)
 		app.Get("/api/admin/stats", r.AdminMW, r.AdminHandler.Stats)
 	}
+
+	if r.AdminHandler != nil {
+		app.Get("/api/admin/overview", r.AdminHandler.Overview)
+	}
 }

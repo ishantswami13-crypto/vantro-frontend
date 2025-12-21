@@ -34,3 +34,18 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+## Admin overview API (curl)
+
+Run the API with an admin key:
+
+```powershell
+$env:ADMIN_KEY="vantro_admin_super_secret_123"
+go run ./cmd/api
+```
+
+Call the admin overview endpoint:
+
+```powershell
+curl.exe -s "http://localhost:8080/api/admin/overview" -H "X-Admin-Key: vantro_admin_super_secret_123"
+```
