@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -55,17 +54,13 @@ func main() {
 		},
 	})
 
+	app.Use(router.CorsMiddleware())
+
 	app.Get("/health", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{
 			"ok": true,
 		})
 	})
-
-	app.Use(cors.New(cors.Config{
-		AllowOrigins: "http://localhost:3000,https://vantro-frontend.onrender.com",
-		AllowHeaders: "Origin, Content-Type, Accept, Authorization",
-		AllowMethods: "GET,POST,PUT,DELETE,OPTIONS",
-	}))
 
 	app.Get("/", func(c *fiber.Ctx) error {
 		return c.SendString("API Working")
