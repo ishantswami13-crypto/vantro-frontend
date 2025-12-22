@@ -20,12 +20,7 @@ func NewHandler(repo *Repo) *Handler {
 func getUserID(c *fiber.Ctx) (string, bool) {
 	if v := c.Locals("user_id"); v != nil {
 		if s, ok := v.(string); ok && strings.TrimSpace(s) != "" {
-			return s, true
-		}
-	}
-	if v := c.Locals("userID"); v != nil {
-		if s, ok := v.(string); ok && strings.TrimSpace(s) != "" {
-			return s, true
+			return strings.TrimSpace(s), true
 		}
 	}
 	return "", false

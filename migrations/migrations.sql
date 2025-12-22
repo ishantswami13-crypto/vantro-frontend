@@ -98,6 +98,98 @@ CREATE TABLE IF NOT EXISTS transactions (
 CREATE INDEX IF NOT EXISTS idx_transactions_user_id_created_at
 ON transactions(user_id, created_at DESC);
 
+-- =========================
+-- POINTS + REWARDS V1
+-- =========================
+
+-- Points ledger (append only)
+CREATE TABLE IF NOT EXISTS points_ledger (
+  id BIGSERIAL PRIMARY KEY,
+  user_id UUID NOT NULL,
+  source_txn_id TEXT NULL,
+  points_delta INT NOT NULL,
+  reason TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Cached points balance
+CREATE TABLE IF NOT EXISTS points_balance (
+  user_id UUID PRIMARY KEY,
+  points_total BIGINT NOT NULL DEFAULT 0,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Tiers (simple for now; can be expanded later)
+CREATE TABLE IF NOT EXISTS tiers (
+  id BIGSERIAL PRIMARY KEY,
+  tier_name TEXT NOT NULL UNIQUE,
+  min_points BIGINT NOT NULL DEFAULT 0,
+  multiplier NUMERIC(6,3) NOT NULL DEFAULT 1.000
+);
+
+INSERT INTO tiers (tier_name, min_points, multiplier)
+VALUES
+ ('STONE', 0, 1.000),
+ ('SILVER', 2000, 1.050),
+ ('OBSIDIAN', 10000, 1.100)
+ON CONFLICT (tier_name) DO NOTHING;
+
+-- Rewards catalog
+CREATE TABLE IF NOT EXISTS rewards_catalog (
+  id BIGSERIAL PRIMARY KEY,
+  title TEXT NOT NULL,
+  type TEXT NOT NULL,               -- e.g. FLIGHT, HOTEL, PERK
+  points_cost BIGINT NOT NULL,
+  partner TEXT NULL,
+  status TEXT NOT NULL DEFAULT 'COMING_SOON',  -- ACTIVE, COMING_SOON
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+INSERT INTO rewards_catalog (title, type, points_cost, partner, status)
+VALUES
+ ('Flights (Coming Soon)', 'FLIGHT', 5000, 'Vantro Travel Partner', 'COMING_SOON')
+ON CONFLICT DO NOTHING;
+
+-- Additional active reward for testing
+INSERT INTO rewards_catalog (title, type, points_cost, partner, status)
+VALUES
+ ('Airport Lounge Pass', 'PERK', 1500, 'Vantro Partner', 'ACTIVE')
+ON CONFLICT DO NOTHING;
+
+-- Redemptions table
+CREATE TABLE IF NOT EXISTS redemptions (
+  id BIGSERIAL PRIMARY KEY,
+  user_id UUID NOT NULL,
+  reward_id BIGINT NOT NULL REFERENCES rewards_catalog(id),
+  points_spent BIGINT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'REQUESTED',     -- REQUESTED, APPROVED, FULFILLED, REJECTED
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_points_ledger_user_id_created_at
+  ON points_ledger(user_id, created_at DESC);
+
+-- avoid double-award for same transaction (only when source_txn_id present)
+CREATE UNIQUE INDEX IF NOT EXISTS uq_points_ledger_user_txn
+  ON points_ledger(user_id, source_txn_id)
+  WHERE source_txn_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_redemptions_user_id_created_at
+  ON redemptions(user_id, created_at DESC);
+
+-- Unified transactions table (idempotent)
+CREATE TABLE IF NOT EXISTS user_transactions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL,
+  amount BIGINT NOT NULL CHECK (amount >= 0),
+  direction TEXT NOT NULL CHECK (direction IN ('IN','OUT')),
+  note TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_transactions_user_created_at
+  ON user_transactions(user_id, created_at DESC);
+
 -- ADMIN + TRACKING FIELDS (safe, minimal)
 ALTER TABLE users
   ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT FALSE;
@@ -213,3 +305,79 @@ CREATE TABLE IF NOT EXISTS transactions (
 
 CREATE INDEX IF NOT EXISTS idx_transactions_user_id_created_at
 ON transactions(user_id, created_at DESC);
+
+-- =========================
+-- V1 CORE TABLES (idempotent)
+-- =========================
+
+-- unified transactions for V1
+CREATE TABLE IF NOT EXISTS transactions_v1 (
+  id BIGSERIAL PRIMARY KEY,
+  user_id UUID NOT NULL,
+  amount BIGINT NOT NULL,
+  direction TEXT NOT NULL CHECK (direction IN ('IN','OUT')),
+  note TEXT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_transactions_v1_user_created_at
+  ON transactions_v1(user_id, created_at DESC);
+
+-- points ledger + balance
+CREATE TABLE IF NOT EXISTS points_ledger (
+  id BIGSERIAL PRIMARY KEY,
+  user_id UUID NOT NULL,
+  source_txn_id TEXT NULL,
+  points_delta INT NOT NULL,
+  reason TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_points_ledger_user_txn_reason
+  ON points_ledger(user_id, source_txn_id, reason)
+  WHERE source_txn_id IS NOT NULL AND reason = 'earn';
+
+CREATE TABLE IF NOT EXISTS points_balance (
+  user_id UUID PRIMARY KEY,
+  points_total BIGINT NOT NULL DEFAULT 0,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS tiers (
+  id BIGSERIAL PRIMARY KEY,
+  tier_name TEXT NOT NULL UNIQUE,
+  min_points BIGINT NOT NULL DEFAULT 0,
+  multiplier NUMERIC(6,3) NOT NULL DEFAULT 1.000
+);
+INSERT INTO tiers (tier_name, min_points, multiplier)
+VALUES
+ ('STONE', 0, 1.000),
+ ('SILVER', 2000, 1.050),
+ ('OBSIDIAN', 10000, 1.100)
+ON CONFLICT (tier_name) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS rewards_catalog (
+  id BIGSERIAL PRIMARY KEY,
+  title TEXT NOT NULL,
+  type TEXT NOT NULL,
+  points_cost BIGINT NOT NULL,
+  partner TEXT NULL,
+  status TEXT NOT NULL DEFAULT 'COMING_SOON',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+INSERT INTO rewards_catalog (title, type, points_cost, partner, status)
+VALUES
+ ('Flights (Coming Soon)', 'FLIGHT', 5000, 'Vantro Travel Partner', 'COMING_SOON'),
+ ('Airport Lounge Pass', 'PERK', 1500, 'Vantro Partner', 'ACTIVE')
+ON CONFLICT DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS redemptions (
+  id BIGSERIAL PRIMARY KEY,
+  user_id UUID NOT NULL,
+  reward_id BIGINT NOT NULL REFERENCES rewards_catalog(id),
+  points_spent BIGINT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'REQUESTED',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_points_ledger_user_id_created_at
+  ON points_ledger(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_redemptions_user_id_created_at
+  ON redemptions(user_id, created_at DESC);

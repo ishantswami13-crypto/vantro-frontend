@@ -10,6 +10,7 @@ import (
 	"github.com/ishantswami13-crypto/vantro-backend/internal/expense"
 	handlers "github.com/ishantswami13-crypto/vantro-backend/internal/http"
 	"github.com/ishantswami13-crypto/vantro-backend/internal/income"
+	"github.com/ishantswami13-crypto/vantro-backend/internal/points"
 	"github.com/ishantswami13-crypto/vantro-backend/internal/reports"
 	"github.com/ishantswami13-crypto/vantro-backend/internal/summary"
 	"github.com/ishantswami13-crypto/vantro-backend/internal/transactions"
@@ -22,10 +23,12 @@ type Router struct {
 	SummaryHandler      *summary.Handler
 	TxHandler           *handlers.TransactionsHandler
 	TransactionsHandler *transactions.Handler
+	SimpleTxHandler     *transactions.SimpleHandler
 	BizHandler          *handlers.BusinessHandler
 	AdminHandler        *admin.Handler
 	OnboardingHandler   *handlers.OnboardingHandler
 	ReportsHandler      *reports.Handler
+	PointsHandler       *points.Handler
 	AuthMW              fiber.Handler
 }
 
@@ -33,6 +36,8 @@ func (r *Router) RegisterRoutes(app *fiber.App) {
 	if r.AuthHandler != nil {
 		app.Post("/api/auth/signup", r.AuthHandler.Signup)
 		app.Post("/api/auth/login", r.AuthHandler.Login)
+		app.Post("/auth/demo", r.AuthHandler.Demo)
+		app.Post("/api/auth/demo", r.AuthHandler.Demo)
 		app.Get("/api/me", r.AuthMW, r.AuthHandler.Me)
 
 		if strings.EqualFold(os.Getenv("DEBUG"), "true") {
@@ -106,6 +111,12 @@ func (r *Router) RegisterRoutes(app *fiber.App) {
 		}
 	}
 
+	// New unified transactions endpoints
+	if r.SimpleTxHandler != nil && r.AuthMW != nil {
+		app.Post("/transactions", r.AuthMW, r.SimpleTxHandler.Create)
+		app.Get("/me/transactions", r.AuthMW, r.SimpleTxHandler.List)
+	}
+
 	if r.AdminHandler != nil {
 		app.Get("/api/admin/overview", r.AdminHandler.Overview)
 	}
@@ -123,5 +134,12 @@ func (r *Router) RegisterRoutes(app *fiber.App) {
 		app.Get("/api/reports/categories", r.AuthMW, r.ReportsHandler.Categories)
 		app.Get("/api/reports/statement", r.AuthMW, r.ReportsHandler.Statement)
 		app.Get("/api/reports/statement.pdf", r.AuthMW, r.ReportsHandler.StatementPDF)
+	}
+
+	if r.PointsHandler != nil && r.AuthMW != nil {
+		app.Get("/me/points", r.AuthMW, r.PointsHandler.PointsSummary)
+		app.Get("/me/points/ledger", r.AuthMW, r.PointsHandler.PointsLedger)
+		app.Get("/rewards", r.AuthMW, r.PointsHandler.Rewards)
+		app.Post("/redeem", r.AuthMW, r.PointsHandler.Redeem)
 	}
 }

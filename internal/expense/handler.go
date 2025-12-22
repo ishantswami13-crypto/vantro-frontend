@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+
+	"github.com/ishantswami13-crypto/vantro-backend/internal/points"
 )
 
 type Handler struct {
@@ -53,6 +55,11 @@ func (h *Handler) CreateExpense(c *fiber.Ctx) error {
 	id, err := h.Repo.InsertExpense(userContext(c), exp)
 	if err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "failed to add expense: "+err.Error())
+	}
+
+	// Award points for outgoing payments
+	if _, err := points.AwardPointsForTransaction(userContext(c), h.Repo.Pool, userID, nil, exp.Amount, "expense_reward"); err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "failed to award points: "+err.Error())
 	}
 
 	return c.Status(fiber.StatusCreated).JSON(CreateExpenseResponse{

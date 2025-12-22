@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -180,6 +181,47 @@ func (h *AuthHandler) DebugUsers(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(users)
+}
+
+// Demo issues a JWT for a demo user. In non-dev environments, require DEMO_SECRET header.
+func (h *AuthHandler) Demo(c *fiber.Ctx) error {
+	env := strings.ToLower(strings.TrimSpace(os.Getenv("ENV")))
+	demoSecret := os.Getenv("DEMO_SECRET")
+	if env != "dev" {
+		if demoSecret == "" {
+			return fiber.NewError(fiber.StatusForbidden, "demo disabled")
+		}
+		if c.Get("DEMO_SECRET") != demoSecret {
+			return fiber.NewError(fiber.StatusUnauthorized, "invalid demo secret")
+		}
+	}
+
+	const demoEmail = "demo@vantro.dev"
+	const demoName = "Vantro Demo"
+	const demoPassword = "demo-pass"
+
+	ctx := userContext(c)
+
+	var userID string
+	err := h.DB.QueryRow(ctx, `SELECT id FROM users WHERE email = $1`, demoEmail).Scan(&userID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		hash, _ := bcrypt.GenerateFromPassword([]byte(demoPassword), bcrypt.DefaultCost)
+		if err := h.DB.QueryRow(ctx, `
+			INSERT INTO users (email, password_hash, full_name)
+			VALUES ($1, $2, $3)
+			RETURNING id
+		`, demoEmail, string(hash), demoName).Scan(&userID); err != nil {
+			return fiber.NewError(fiber.StatusInternalServerError, "could not create demo user")
+		}
+	} else if err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "failed to fetch demo user")
+	}
+
+	token, err := generateToken(userID)
+	if err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "could not create token")
+	}
+	return c.JSON(authResponse{Token: token})
 }
 
 func userContext(c *fiber.Ctx) context.Context {

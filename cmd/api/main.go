@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"log"
 	"os"
@@ -9,13 +10,17 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"github.com/ishantswami13-crypto/vantro-backend/internal/admin"
+	appapi "github.com/ishantswami13-crypto/vantro-backend/internal/api"
 	"github.com/ishantswami13-crypto/vantro-backend/internal/expense"
 	apphttp "github.com/ishantswami13-crypto/vantro-backend/internal/http"
 	"github.com/ishantswami13-crypto/vantro-backend/internal/income"
+	"github.com/ishantswami13-crypto/vantro-backend/internal/points"
 	"github.com/ishantswami13-crypto/vantro-backend/internal/reports"
 	"github.com/ishantswami13-crypto/vantro-backend/internal/router"
 	"github.com/ishantswami13-crypto/vantro-backend/internal/summary"
@@ -28,16 +33,22 @@ func main() {
 		log.Fatal("DATABASE_URL is not set")
 	}
 
+	db, err := sql.Open("pgx", dsn)
+	if err != nil {
+		log.Fatalf("error opening database: %v", err)
+	}
+	defer db.Close()
+	if err := db.Ping(); err != nil {
+		log.Fatalf("error pinging database: %v", err)
+	}
+
+	// Legacy pgxpool for existing handlers
 	ctx := context.Background()
 	pool, err := pgxpool.New(ctx, dsn)
 	if err != nil {
 		log.Fatalf("error creating pgx pool: %v", err)
 	}
 	defer pool.Close()
-
-	if err := pool.Ping(ctx); err != nil {
-		log.Fatalf("error pinging database: %v", err)
-	}
 
 	app := fiber.New(fiber.Config{
 		ErrorHandler: func(c *fiber.Ctx, err error) error {
@@ -54,7 +65,12 @@ func main() {
 		},
 	})
 
-	app.Use(router.CorsMiddleware())
+	app.Use(cors.New(cors.Config{
+		AllowOrigins: "http://localhost:3000,https://localhost:3000",
+		AllowMethods: "GET,POST,PUT,DELETE,OPTIONS",
+		AllowHeaders: "Origin, Content-Type, Accept, Authorization",
+	}))
+	app.Use(requestLogger())
 
 	app.Get("/health", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{
@@ -70,6 +86,24 @@ func main() {
 		return c.SendString("ok")
 	})
 
+	// Dev token endpoint
+	if strings.EqualFold(os.Getenv("ENV"), "dev") {
+		app.Get("/dev/token", func(c *fiber.Ctx) error {
+			secret := []byte(os.Getenv("JWT_SECRET"))
+			if len(secret) == 0 {
+				secret = []byte("vantro_super_secret_change_me")
+			}
+			token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+				"user_id": "11111111-1111-1111-1111-111111111111",
+			})
+			signed, err := token.SignedString(secret)
+			if err != nil {
+				return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+			}
+			return c.JSON(fiber.Map{"token": signed})
+		})
+	}
+
 	authHandler := &apphttp.AuthHandler{DB: pool}
 	incomeRepo := income.NewRepository(pool)
 	incomeHandler := income.NewHandler(incomeRepo)
@@ -83,8 +117,20 @@ func main() {
 	onboardingHandler := &apphttp.OnboardingHandler{DB: pool}
 	adminHandler := admin.NewHandler(pool)
 	reportsHandler := reports.NewHandler(pool)
+	pointsHandler := points.NewHandler(pool)
+	simpleTxRepo := transactions.NewSimpleRepo(pool)
+	simpleTxHandler := transactions.NewSimpleHandler(simpleTxRepo)
+	apiServer := &appapi.Server{DB: db}
 
 	authMiddleware := buildJWTMiddleware(pool)
+
+	// V1 endpoints (JWT only)
+	app.Post("/transactions", authMiddleware, apiServer.CreateTransaction)
+	app.Get("/me/transactions", authMiddleware, apiServer.ListTransactions)
+	app.Get("/me/points", authMiddleware, apiServer.PointsSummary)
+	app.Get("/me/points/ledger", authMiddleware, apiServer.PointsLedger)
+	app.Get("/rewards", apiServer.Rewards) // ok public
+	app.Post("/redeem", authMiddleware, apiServer.Redeem)
 
 	r := &router.Router{
 		AuthHandler:         authHandler,
@@ -92,23 +138,39 @@ func main() {
 		ExpenseHandler:      expenseHandler,
 		SummaryHandler:      summaryHandler,
 		TransactionsHandler: txnHandler,
+		SimpleTxHandler:     simpleTxHandler,
 		BizHandler:          bizHandler,
 		AdminHandler:        adminHandler,
 		OnboardingHandler:   onboardingHandler,
 		ReportsHandler:      reportsHandler,
+		PointsHandler:       pointsHandler,
 		AuthMW:              authMiddleware,
 	}
 	r.RegisterRoutes(app)
 
-	if err := app.Listen(":8080"); err != nil {
-		log.Fatalf("server error: %v", err)
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+
+	log.Println("Listening on port", port)
+	log.Fatal(app.Listen(":" + port))
+}
+
+func requestLogger() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		start := time.Now()
+		err := c.Next()
+		status := c.Response().StatusCode()
+		log.Printf("%s %s %d %s", c.Method(), c.Path(), status, time.Since(start))
+		return err
 	}
 }
 
 func buildJWTMiddleware(pool *pgxpool.Pool) fiber.Handler {
 	secret := []byte(os.Getenv("JWT_SECRET"))
 	if len(secret) == 0 {
-		secret = []byte("supersecretapikey")
+		secret = []byte("vantro_super_secret_change_me")
 	}
 
 	return func(c *fiber.Ctx) error {
