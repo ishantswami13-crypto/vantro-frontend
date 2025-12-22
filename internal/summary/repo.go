@@ -27,6 +27,7 @@ func (r Repo) GetByUser(ctx context.Context, userID string, month string) (Summa
 			SELECT COALESCE(SUM(amount), 0)::bigint
 			FROM incomes
 			WHERE user_id = $1
+			  AND deleted_at IS NULL
 			  AND to_char(received_on, 'YYYY-MM') = $2
 		`, userID, month).Scan(&income)
 		if err != nil {
@@ -37,6 +38,7 @@ func (r Repo) GetByUser(ctx context.Context, userID string, month string) (Summa
 			SELECT COALESCE(SUM(amount), 0)::bigint
 			FROM expenses
 			WHERE user_id = $1
+			  AND deleted_at IS NULL
 			  AND to_char(spent_on, 'YYYY-MM') = $2
 		`, userID, month).Scan(&expense)
 		if err != nil {
@@ -48,6 +50,7 @@ func (r Repo) GetByUser(ctx context.Context, userID string, month string) (Summa
 			SELECT COALESCE(SUM(amount), 0)::bigint
 			FROM incomes
 			WHERE user_id = $1
+			  AND deleted_at IS NULL
 		`, userID).Scan(&income)
 		if err != nil {
 			return Summary{}, err
@@ -57,6 +60,7 @@ func (r Repo) GetByUser(ctx context.Context, userID string, month string) (Summa
 			SELECT COALESCE(SUM(amount), 0)::bigint
 			FROM expenses
 			WHERE user_id = $1
+			  AND deleted_at IS NULL
 		`, userID).Scan(&expense)
 		if err != nil {
 			return Summary{}, err

@@ -58,10 +58,10 @@ func (h *Handler) Overview(c *fiber.Ctx) error {
 	if err := h.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM users`).Scan(&resp.UsersTotal); err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "failed users_total: "+err.Error())
 	}
-	if err := h.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM incomes`).Scan(&resp.IncomesTotal); err != nil {
+	if err := h.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM incomes WHERE deleted_at IS NULL`).Scan(&resp.IncomesTotal); err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "failed incomes_total: "+err.Error())
 	}
-	if err := h.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM expenses`).Scan(&resp.ExpensesTotal); err != nil {
+	if err := h.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM expenses WHERE deleted_at IS NULL`).Scan(&resp.ExpensesTotal); err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "failed expenses_total: "+err.Error())
 	}
 
@@ -94,6 +94,7 @@ func (h *Handler) Overview(c *fiber.Ctx) error {
 		rows, err := h.Pool.Query(ctx, `
 			SELECT id::text, user_id::text, amount, created_at::text
 			FROM incomes
+			WHERE deleted_at IS NULL
 			ORDER BY created_at DESC
 			LIMIT 20`)
 		if err != nil {
@@ -118,6 +119,7 @@ func (h *Handler) Overview(c *fiber.Ctx) error {
 		rows, err := h.Pool.Query(ctx, `
 			SELECT id::text, user_id::text, amount, created_at::text
 			FROM expenses
+			WHERE deleted_at IS NULL
 			ORDER BY created_at DESC
 			LIMIT 20`)
 		if err != nil {

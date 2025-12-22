@@ -94,11 +94,13 @@ func (r *Router) RegisterRoutes(app *fiber.App) {
 			app.Get("/api/transactions/summary", r.AuthMW, r.TransactionsHandler.GetSummary)
 			app.Get("/api/export/transactions.csv", r.AuthMW, r.TransactionsHandler.ExportCSV)
 			app.Delete("/api/transactions/:type/:id", r.AuthMW, r.TransactionsHandler.Delete)
+			app.Post("/api/transactions/:type/:id/undo", r.AuthMW, r.TransactionsHandler.Undo)
 		} else {
 			app.Get("/api/transactions", r.TransactionsHandler.ListLatest)
 			app.Get("/api/transactions/summary", r.TransactionsHandler.GetSummary)
 			app.Get("/api/export/transactions.csv", r.TransactionsHandler.ExportCSV)
 			app.Delete("/api/transactions/:type/:id", r.TransactionsHandler.Delete)
+			app.Post("/api/transactions/:type/:id/undo", r.TransactionsHandler.Undo)
 		}
 	}
 

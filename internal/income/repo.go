@@ -40,6 +40,7 @@ func (r *Repository) ListIncomesByUser(ctx context.Context, userID string) ([]In
 		`SELECT id, user_id, client_name, amount, currency, received_on, note, created_at
 		 FROM incomes
 		 WHERE user_id = $1
+		   AND deleted_at IS NULL
 		 ORDER BY received_on DESC`,
 		userID,
 	)

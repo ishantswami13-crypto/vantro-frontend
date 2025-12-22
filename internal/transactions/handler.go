@@ -141,6 +141,44 @@ func (h *Handler) Delete(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"status": "ok"})
 }
 
+func (h *Handler) Undo(c *fiber.Ctx) error {
+	uidVal := c.Locals("user_id")
+	if uidVal == nil {
+		uidVal = c.Locals("userID")
+	}
+	userID, _ := uidVal.(string)
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return fiber.NewError(fiber.StatusUnauthorized, "unauthorized")
+	}
+
+	typ := normalizeType(c.Params("type"))
+	if typ == "" {
+		return fiber.NewError(fiber.StatusBadRequest, "type must be income or expense")
+	}
+
+	id := strings.TrimSpace(c.Params("id"))
+	if id == "" {
+		return fiber.NewError(fiber.StatusBadRequest, "id required")
+	}
+
+	var err error
+	if typ == "income" {
+		err = h.Repo.UndoIncomeByID(c.UserContext(), userID, id)
+	} else {
+		err = h.Repo.UndoExpenseByID(c.UserContext(), userID, id)
+	}
+
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			return fiber.NewError(fiber.StatusNotFound, "not found")
+		}
+		return fiber.NewError(fiber.StatusInternalServerError, "undo failed: "+err.Error())
+	}
+
+	return c.JSON(fiber.Map{"status": "ok"})
+}
+
 func userContext(c *fiber.Ctx) context.Context {
 	if ctx := c.UserContext(); ctx != nil {
 		return ctx

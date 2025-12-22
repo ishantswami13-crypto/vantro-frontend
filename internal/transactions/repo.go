@@ -30,6 +30,7 @@ SELECT
   created_at::text
 FROM incomes
 WHERE user_id = $1
+  AND deleted_at IS NULL
 
 UNION ALL
 
@@ -43,6 +44,7 @@ SELECT
   created_at::text
 FROM expenses
 WHERE user_id = $1
+  AND deleted_at IS NULL
 
 ORDER BY created_at DESC
 LIMIT $2
@@ -72,6 +74,7 @@ func (r *Repo) GetSummary(ctx context.Context, userID string) (SummaryResponse, 
 			COALESCE(SUM(amount), 0)::bigint AS income
 		FROM incomes
 		WHERE user_id = $1
+		  AND deleted_at IS NULL
 	`, userID).Scan(&income)
 	if err != nil {
 		return SummaryResponse{}, err
@@ -82,6 +85,7 @@ func (r *Repo) GetSummary(ctx context.Context, userID string) (SummaryResponse, 
 			COALESCE(SUM(amount), 0)::bigint AS expense
 		FROM expenses
 		WHERE user_id = $1
+		  AND deleted_at IS NULL
 	`, userID).Scan(&expense)
 	if err != nil {
 		return SummaryResponse{}, err

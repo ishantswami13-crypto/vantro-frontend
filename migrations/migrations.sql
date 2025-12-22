@@ -109,6 +109,21 @@ ALTER TABLE users
 ALTER TABLE users
   ADD COLUMN IF NOT EXISTS onboarding_step TEXT NOT NULL DEFAULT 'start';
 
+-- Soft delete support for incomes/expenses
+ALTER TABLE incomes
+  ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+
+ALTER TABLE expenses
+  ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+
+CREATE INDEX IF NOT EXISTS idx_incomes_user_id_created_at_active
+  ON incomes(user_id, created_at DESC)
+  WHERE deleted_at IS NULL;
+
+CREATE INDEX IF NOT EXISTS idx_expenses_user_id_created_at_active
+  ON expenses(user_id, created_at DESC)
+  WHERE deleted_at IS NULL;
+
 -- Helpful index
 CREATE INDEX IF NOT EXISTS idx_users_created_at ON users(created_at DESC);
 

@@ -39,6 +39,7 @@ func (r *Repository) ListExpensesByUser(ctx context.Context, userID string) ([]E
 		SELECT id, user_id, vendor_name, amount, currency, spent_on, note, created_at
 		FROM expenses
 		WHERE user_id = $1
+		  AND deleted_at IS NULL
 		ORDER BY created_at DESC
 	`, userID)
 	if err != nil {
