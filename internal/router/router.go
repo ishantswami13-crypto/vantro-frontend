@@ -120,5 +120,7 @@ func (r *Router) RegisterRoutes(app *fiber.App) {
 
 	if r.ReportsHandler != nil && r.AuthMW != nil {
 		app.Get("/api/reports", r.AuthMW, r.ReportsHandler.Get)
+		app.Get("/api/reports/categories", r.AuthMW, r.ReportsHandler.Categories)
+		app.Get("/api/reports/statement", r.AuthMW, r.ReportsHandler.Statement)
 	}
 }
