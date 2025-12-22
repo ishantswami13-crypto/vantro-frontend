@@ -10,6 +10,7 @@ import (
 	"github.com/ishantswami13-crypto/vantro-backend/internal/expense"
 	handlers "github.com/ishantswami13-crypto/vantro-backend/internal/http"
 	"github.com/ishantswami13-crypto/vantro-backend/internal/income"
+	"github.com/ishantswami13-crypto/vantro-backend/internal/reports"
 	"github.com/ishantswami13-crypto/vantro-backend/internal/summary"
 	"github.com/ishantswami13-crypto/vantro-backend/internal/transactions"
 )
@@ -24,6 +25,7 @@ type Router struct {
 	BizHandler          *handlers.BusinessHandler
 	AdminHandler        *admin.Handler
 	OnboardingHandler   *handlers.OnboardingHandler
+	ReportsHandler      *reports.Handler
 	AuthMW              fiber.Handler
 }
 
@@ -114,5 +116,9 @@ func (r *Router) RegisterRoutes(app *fiber.App) {
 		} else {
 			app.Post("/api/onboarding/step", r.OnboardingHandler.UpdateStep)
 		}
+	}
+
+	if r.ReportsHandler != nil && r.AuthMW != nil {
+		app.Get("/api/reports", r.AuthMW, r.ReportsHandler.Get)
 	}
 }

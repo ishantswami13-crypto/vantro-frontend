@@ -17,6 +17,7 @@ import (
 	"github.com/ishantswami13-crypto/vantro-backend/internal/expense"
 	apphttp "github.com/ishantswami13-crypto/vantro-backend/internal/http"
 	"github.com/ishantswami13-crypto/vantro-backend/internal/income"
+	"github.com/ishantswami13-crypto/vantro-backend/internal/reports"
 	"github.com/ishantswami13-crypto/vantro-backend/internal/router"
 	"github.com/ishantswami13-crypto/vantro-backend/internal/summary"
 	"github.com/ishantswami13-crypto/vantro-backend/internal/transactions"
@@ -86,6 +87,7 @@ func main() {
 	txnHandler := transactions.NewHandler(txnRepo)
 	onboardingHandler := &apphttp.OnboardingHandler{DB: pool}
 	adminHandler := admin.NewHandler(pool)
+	reportsHandler := reports.NewHandler(pool)
 
 	authMiddleware := buildJWTMiddleware(pool)
 
@@ -98,6 +100,7 @@ func main() {
 		BizHandler:          bizHandler,
 		AdminHandler:        adminHandler,
 		OnboardingHandler:   onboardingHandler,
+		ReportsHandler:      reportsHandler,
 		AuthMW:              authMiddleware,
 	}
 	r.RegisterRoutes(app)
