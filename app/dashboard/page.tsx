@@ -2,18 +2,20 @@
 
 import { useMemo, useState } from "react";
 import { ArrowUpRight, RefreshCw, LogOut } from "lucide-react";
+import CountUp from "react-countup";
 import { Card, CardContent, CardHeader } from "@/app/components/ui/Card";
 import { Button } from "@/app/components/ui/Button";
 import { Toast } from "@/app/components/ui/Toast";
+import { TransactionRow } from "@/app/components/TransactionRow";
 
 export default function DashboardPage() {
   const [error, setError] = useState<string | null>("invalid or missing API key");
 
   const stats = useMemo(
     () => [
-      { label: "Income", value: "₹0" },
-      { label: "Expense", value: "₹0" },
-      { label: "Net", value: "₹0" },
+      { label: "Income", value: 0 },
+      { label: "Expense", value: 0 },
+      { label: "Net", value: 0 },
     ],
     []
   );
@@ -75,7 +77,9 @@ export default function DashboardPage() {
                 <div className="text-xs text-white/50">{s.label}</div>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-semibold tabular-nums tracking-tight">{s.value}</div>
+                <div className="text-2xl font-semibold tabular-nums tracking-tight">
+                  ₹<CountUp end={s.value} duration={1.2} separator="," />
+                </div>
               </CardContent>
             </Card>
           ))}
@@ -91,8 +95,9 @@ export default function DashboardPage() {
               <button className="text-xs text-white/60 hover:text-white">View all →</button>
             </CardHeader>
             <CardContent>
-              <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4 text-sm text-white/60">
-                No transactions yet.
+              <div className="space-y-3">
+                <TransactionRow title="Client Payment" category="Income" amount={12000} type="income" />
+                <TransactionRow title="AWS Bill" category="Infra" amount={2200} type="expense" />
               </div>
             </CardContent>
           </Card>
