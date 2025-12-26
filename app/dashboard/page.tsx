@@ -1,172 +1,103 @@
-"use client";
+﻿"use client";
 
-import { useEffect, useState } from "react";
-import Link from "next/link";
-import AuthGuard from "@/components/AuthGuard";
-import Navbar from "@/components/Navbar";
-import { apiFetch } from "@/lib/api";
-import { logout } from "@/lib/auth";
-
-type Summary = {
-  income: number;
-  expense: number;
-  net: number;
-};
-
-type Txn = {
-  id: number | string;
-  type: "income" | "expense";
-  amount: number;
-  note?: string;
-  created_at?: string;
-};
-
-function formatINR(n: number) {
-  try {
-    return new Intl.NumberFormat("en-IN", {
-      style: "currency",
-      currency: "INR",
-      maximumFractionDigits: 0,
-    }).format(n);
-  } catch {
-    return `₹${Math.round(n)}`;
-  }
-}
+import { useMemo, useState } from "react";
+import { ArrowUpRight, RefreshCw, LogOut } from "lucide-react";
+import { Card, CardContent, CardHeader } from "@/app/components/ui/Card";
+import { Button } from "@/app/components/ui/Button";
+import { Toast } from "@/app/components/ui/Toast";
 
 export default function DashboardPage() {
-  const [summary, setSummary] = useState<Summary | null>(null);
-  const [recent, setRecent] = useState<Txn[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState("");
+  const [error, setError] = useState<string | null>("invalid or missing API key");
 
-  async function load() {
-    setErr("");
-    setLoading(true);
-    try {
-      const [s, list] = await Promise.all([
-        apiFetch<Summary>("/api/transactions/summary"),
-        apiFetch<Txn[]>("/api/transactions"),
-      ]);
-      setSummary(s);
-      setRecent(Array.isArray(list) ? list.slice(0, 8) : []);
-    } catch (e: any) {
-      setErr(e?.message || "Failed to load dashboard");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    load();
-  }, []);
-
-  const income = summary?.income ?? 0;
-  const expense = summary?.expense ?? 0;
-  const net = summary?.net ?? 0;
+  const stats = useMemo(
+    () => [
+      { label: "Income", value: "₹0" },
+      { label: "Expense", value: "₹0" },
+      { label: "Net", value: "₹0" },
+    ],
+    []
+  );
 
   return (
-    <AuthGuard>
-      <div className="min-h-screen bg-black text-white">
-        <Navbar />
+    <div className="min-h-screen text-white">
+      <Toast show={!!error}>
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-sm text-white/90">
+            <span className="font-medium">Heads up:</span>{" "}
+            <span className="text-white/70">{error}</span>
+          </div>
+          <button className="text-xs text-white/70 hover:text-white" onClick={() => setError(null)}>
+            Dismiss
+          </button>
+        </div>
+      </Toast>
 
-        <div className="max-w-4xl mx-auto p-6 space-y-6">
-          <div className="flex items-center justify-between">
-            <h1 className="text-2xl font-bold">Dashboard</h1>
-            <div className="flex gap-3">
-              <Link
-                href="/transactions"
-                className="px-4 py-2 rounded bg-white text-black hover:opacity-90"
-              >
-                Add / View Transactions
-              </Link>
-              <button
-                onClick={load}
-                className="px-4 py-2 rounded border border-neutral-700 hover:border-neutral-500"
-              >
-                Refresh
-              </button>
-              <button
-                onClick={logout}
-                className="px-4 py-2 rounded border border-neutral-700"
-              >
-                Logout
-              </button>
+      <header className="sticky top-0 z-10 border-b border-white/10 bg-black/40 backdrop-blur-xl">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
+          <div className="flex items-center gap-3">
+            <div className="h-9 w-9 rounded-2xl border border-white/10 bg-white/[0.06]" />
+            <div className="leading-tight">
+              <div className="text-sm font-semibold tracking-tight">VANTRO</div>
+              <div className="text-xs text-white/50">Finance OS</div>
             </div>
           </div>
 
-          {err ? (
-            <div className="bg-red-900/40 border border-red-500/40 p-3 rounded">
-              {err}
-            </div>
-          ) : null}
-
-          {/* Summary cards */}
-          <section className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="bg-neutral-900 border border-neutral-800 rounded-lg p-4">
-              <div className="text-sm text-neutral-400">Income</div>
-              <div className="text-xl font-semibold">
-                {loading ? "..." : formatINR(income)}
-              </div>
-            </div>
-
-            <div className="bg-neutral-900 border border-neutral-800 rounded-lg p-4">
-              <div className="text-sm text-neutral-400">Expense</div>
-              <div className="text-xl font-semibold">
-                {loading ? "..." : formatINR(expense)}
-              </div>
-            </div>
-
-            <div className="bg-neutral-900 border border-neutral-800 rounded-lg p-4">
-              <div className="text-sm text-neutral-400">Net</div>
-              <div
-                className={`text-xl font-semibold ${
-                  net >= 0 ? "text-green-400" : "text-red-400"
-                }`}
-              >
-                {loading ? "..." : formatINR(net)}
-              </div>
-            </div>
-          </section>
-
-          {/* Recent transactions */}
-          <section className="bg-neutral-900 border border-neutral-800 rounded-lg p-5">
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="text-lg font-semibold">Recent</h2>
-              <Link href="/transactions" className="text-sm text-neutral-300 hover:text-white">
-                View all →
-              </Link>
-            </div>
-
-            {loading ? (
-              <div className="text-neutral-400">Loading...</div>
-            ) : recent.length === 0 ? (
-              <div className="text-neutral-400">No transactions yet.</div>
-            ) : (
-              <div className="divide-y divide-neutral-800">
-                {recent.map((t) => (
-                  <div key={String(t.id)} className="py-3 flex justify-between gap-4">
-                    <div>
-                      <div className="font-medium">
-                        <span className={t.type === "income" ? "text-green-400" : "text-red-400"}>
-                          {t.type.toUpperCase()}
-                        </span>
-                        <span className="text-neutral-400"> · </span>
-                        <span>{formatINR(Number(t.amount || 0))}</span>
-                      </div>
-                      {t.note ? <div className="text-sm text-neutral-400">{t.note}</div> : null}
-                    </div>
-
-                    <div className="text-xs text-neutral-500">
-                      {t.created_at ? new Date(t.created_at).toLocaleString() : ""}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost">
+              <RefreshCw className="mr-2 h-4 w-4" />
+              Refresh
+            </Button>
+            <Button>
+              <LogOut className="mr-2 h-4 w-4" />
+              Logout
+            </Button>
+          </div>
         </div>
-      </div>
-    </AuthGuard>
+      </header>
+
+      <main className="mx-auto max-w-6xl px-6 py-10">
+        <div className="flex items-end justify-between gap-6">
+          <div>
+            <h1 className="text-3xl font-semibold tracking-tight">Dashboard</h1>
+            <p className="mt-1 text-sm text-white/55">Your money, clean and controlled.</p>
+          </div>
+
+          <Button className="rounded-2xl px-5 py-3 text-sm">
+            Add transaction
+            <ArrowUpRight className="ml-2 h-4 w-4" />
+          </Button>
+        </div>
+
+        <section className="mt-8 grid gap-4 md:grid-cols-3">
+          {stats.map((s) => (
+            <Card key={s.label}>
+              <CardHeader>
+                <div className="text-xs text-white/50">{s.label}</div>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-semibold tabular-nums tracking-tight">{s.value}</div>
+              </CardContent>
+            </Card>
+          ))}
+        </section>
+
+        <section className="mt-6">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <div className="text-sm font-semibold tracking-tight">Recent</div>
+                <div className="text-xs text-white/50">Latest activity</div>
+              </div>
+              <button className="text-xs text-white/60 hover:text-white">View all →</button>
+            </CardHeader>
+            <CardContent>
+              <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4 text-sm text-white/60">
+                No transactions yet.
+              </div>
+            </CardContent>
+          </Card>
+        </section>
+      </main>
+    </div>
   );
 }
-
