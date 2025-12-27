@@ -152,7 +152,7 @@ func main() {
 	app.Post("/v1/billing/webhook", billing.RazorpayWebhookHandler(billingStore, expenseStore, repStore, twilioClient))
 
 	// WhatsApp inbound (Twilio webhook)
-	app.Post("/v1/whatsapp/inbound", whatsapp.InboundHandler(expenseStore, billingStore, razorpayClient))
+	app.Post("/v1/whatsapp/inbound", whatsapp.Inbound)
 
 	// Public report download (tokenized)
 	app.Get("/r/:token", reports.DownloadHandler(repStore))
