@@ -17,6 +17,7 @@ import (
 
 	"github.com/ishantswami13-crypto/vantro-backend/internal/admin"
 	appapi "github.com/ishantswami13-crypto/vantro-backend/internal/api"
+	"github.com/ishantswami13-crypto/vantro-backend/internal/billing"
 	"github.com/ishantswami13-crypto/vantro-backend/internal/expense"
 	apphttp "github.com/ishantswami13-crypto/vantro-backend/internal/http"
 	"github.com/ishantswami13-crypto/vantro-backend/internal/income"
@@ -120,6 +121,8 @@ func main() {
 	pointsHandler := points.NewHandler(pool)
 	simpleTxRepo := transactions.NewSimpleRepo(pool)
 	simpleTxHandler := transactions.NewSimpleHandler(simpleTxRepo)
+	billingStore := &billing.Store{DB: db}
+	razorpayClient := billing.NewRazorpayFromEnv()
 	expenseStore := &expense.Store{DB: db}
 	apiServer := &appapi.Server{DB: db}
 
@@ -137,6 +140,13 @@ func main() {
 	app.Post("/v1/expense/add", expense.AddExpenseHandler(expenseStore))
 	app.Get("/v1/expense/list", expense.ListExpensesHandler(expenseStore))
 	app.Get("/v1/expense/summary", expense.MonthlySummaryHandler(expenseStore))
+
+	// Expense reports (paid)
+	app.Get("/v1/expense/report", expense.MonthlyPDFHandler(expenseStore, billingStore))
+
+	// Billing / Razorpay
+	app.Post("/v1/billing/create-link", billing.CreatePaymentLinkHandler(billingStore, razorpayClient))
+	app.Post("/v1/billing/webhook", billing.RazorpayWebhookHandler(billingStore))
 
 	r := &router.Router{
 		AuthHandler:         authHandler,

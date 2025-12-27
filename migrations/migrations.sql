@@ -400,3 +400,19 @@ CREATE INDEX IF NOT EXISTS idx_expenses_user_phone_created_at
 
 CREATE INDEX IF NOT EXISTS idx_expenses_category
   ON expenses (category);
+
+-- Vantro Expense Memory: subscriptions (for paid PDF reports)
+
+CREATE TABLE IF NOT EXISTS subscriptions (
+  id BIGSERIAL PRIMARY KEY,
+  user_phone TEXT NOT NULL UNIQUE,
+  plan TEXT NOT NULL DEFAULT 'expense_memory_monthly',
+  status TEXT NOT NULL DEFAULT 'inactive', -- inactive | active
+  current_period_end TIMESTAMPTZ,          -- when access expires
+  razorpay_payment_link_id TEXT,           -- last payment link id (optional)
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_subscriptions_status
+  ON subscriptions (status);
