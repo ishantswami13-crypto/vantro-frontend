@@ -26,6 +26,7 @@ import (
 	"github.com/ishantswami13-crypto/vantro-backend/internal/router"
 	"github.com/ishantswami13-crypto/vantro-backend/internal/summary"
 	"github.com/ishantswami13-crypto/vantro-backend/internal/transactions"
+	"github.com/ishantswami13-crypto/vantro-backend/internal/whatsapp"
 )
 
 func main() {
@@ -147,6 +148,9 @@ func main() {
 	// Billing / Razorpay
 	app.Post("/v1/billing/create-link", billing.CreatePaymentLinkHandler(billingStore, razorpayClient))
 	app.Post("/v1/billing/webhook", billing.RazorpayWebhookHandler(billingStore))
+
+	// WhatsApp inbound (Twilio webhook)
+	app.Post("/v1/whatsapp/inbound", whatsapp.InboundHandler(expenseStore))
 
 	r := &router.Router{
 		AuthHandler:         authHandler,
