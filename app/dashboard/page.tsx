@@ -12,30 +12,49 @@ import { Modal } from "@/app/components/ui/Modal";
 import AddTransactionForm from "@/app/components/AddTransactionForm";
 import { BalanceRing } from "@/app/components/BalanceRing";
 
+type Tx = {
+  id: number;
+  type: "income" | "expense";
+  title: string;
+  category: string;
+  amount: number;
+  createdAt: string;
+};
+
 export default function DashboardPage() {
   const [error, setError] = useState<string | null>("invalid or missing API key");
   const [open, setOpen] = useState(false);
-  const [tx, setTx] = useState<any[]>([]);
-
-  const stats = useMemo(
-    () => [
-      { label: "Income", value: 0 },
-      { label: "Expense", value: 0 },
-      { label: "Net", value: 0 },
-    ],
-    []
-  );
+  const [tx, setTx] = useState<Tx[]>([]);
 
   useEffect(() => {
     const stored = JSON.parse(localStorage.getItem("tx") || "[]");
     setTx(stored);
   }, []);
 
-  const totals = useMemo(() => {
-    const income = tx.filter((t) => t.type === "income").reduce((s, t) => s + Number(t.amount || 0), 0);
-    const expense = tx.filter((t) => t.type === "expense").reduce((s, t) => s + Number(t.amount || 0), 0);
-    return { income, expense, net: income - expense };
+  const { income, expense, net } = useMemo(() => {
+    let income = 0;
+    let expense = 0;
+
+    for (const t of tx) {
+      if (t.type === "income") income += t.amount;
+      if (t.type === "expense") expense += t.amount;
+    }
+
+    return {
+      income,
+      expense,
+      net: income - expense,
+    };
   }, [tx]);
+
+  const stats = useMemo(
+    () => [
+      { label: "Income", value: income, positive: true },
+      { label: "Expense", value: expense, positive: false },
+      { label: "Net", value: net, positive: net >= 0 },
+    ],
+    [income, expense, net]
+  );
 
   return (
     <div className="min-h-screen text-white">
@@ -88,18 +107,18 @@ export default function DashboardPage() {
         </div>
 
         <section className="mt-8">
-          <BalanceRing income={totals.income} expense={totals.expense} />
+          <BalanceRing income={income} expense={expense} />
         </section>
 
         <section className="mt-8 grid gap-4 md:grid-cols-3">
-          {[{ label: "Income", value: totals.income }, { label: "Expense", value: totals.expense }, { label: "Net", value: totals.net }].map((s) => (
+          {stats.map((s) => (
             <Card key={s.label}>
               <CardHeader>
                 <div className="text-xs text-white/50">{s.label}</div>
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-semibold tabular-nums tracking-tight">
-                  <CountUp end={s.value} duration={1.2} separator="," prefix="₹" />
+                  <CountUp end={Math.abs(s.value)} duration={1.2} separator="," prefix="₹" />
                 </div>
               </CardContent>
             </Card>
