@@ -125,6 +125,8 @@ func main() {
 	billingStore := &billing.Store{DB: db}
 	razorpayClient := billing.NewRazorpayFromEnv()
 	expenseStore := &expense.Store{DB: db}
+	repStore := &reports.Store{DB: db}
+	twilioClient := whatsapp.NewTwilioFromEnv()
 	apiServer := &appapi.Server{DB: db}
 
 	authMiddleware := buildJWTMiddleware(pool)
@@ -147,10 +149,13 @@ func main() {
 
 	// Billing / Razorpay
 	app.Post("/v1/billing/create-link", billing.CreatePaymentLinkHandler(billingStore, razorpayClient))
-	app.Post("/v1/billing/webhook", billing.RazorpayWebhookHandler(billingStore))
+	app.Post("/v1/billing/webhook", billing.RazorpayWebhookHandler(billingStore, expenseStore, repStore, twilioClient))
 
 	// WhatsApp inbound (Twilio webhook)
-	app.Post("/v1/whatsapp/inbound", whatsapp.InboundHandler(expenseStore))
+	app.Post("/v1/whatsapp/inbound", whatsapp.InboundHandler(expenseStore, billingStore, razorpayClient))
+
+	// Public report download (tokenized)
+	app.Get("/r/:token", reports.DownloadHandler(repStore))
 
 	r := &router.Router{
 		AuthHandler:         authHandler,

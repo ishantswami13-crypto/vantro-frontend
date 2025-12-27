@@ -1,14 +1,17 @@
 package expense
 
 import (
+	"context"
 	"strconv"
 
 	"github.com/gofiber/fiber/v2"
-
-	"github.com/ishantswami13-crypto/vantro-backend/internal/billing"
 )
 
-func MonthlyPDFHandler(expStore *Store, billStore *billing.Store) fiber.Handler {
+type subscriptionChecker interface {
+	IsActive(ctx context.Context, phone string) (bool, error)
+}
+
+func MonthlyPDFHandler(expStore *Store, checker subscriptionChecker) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		phone := c.Query("phone")
 		yearStr := c.Query("year")
@@ -24,7 +27,7 @@ func MonthlyPDFHandler(expStore *Store, billStore *billing.Store) fiber.Handler 
 			return c.Status(fiber.StatusBadRequest).SendString("year/month invalid")
 		}
 
-		active, err := billStore.IsActive(c.Context(), phone)
+		active, err := checker.IsActive(c.Context(), phone)
 		if err != nil {
 			return c.Status(fiber.StatusInternalServerError).SendString("server error")
 		}

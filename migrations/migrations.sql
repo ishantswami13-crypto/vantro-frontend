@@ -416,3 +416,18 @@ CREATE TABLE IF NOT EXISTS subscriptions (
 
 CREATE INDEX IF NOT EXISTS idx_subscriptions_status
   ON subscriptions (status);
+
+-- Store generated PDF links (tokenized access)
+CREATE TABLE IF NOT EXISTS reports (
+  id BIGSERIAL PRIMARY KEY,
+  user_phone TEXT NOT NULL,
+  month TEXT NOT NULL, -- YYYY-MM
+  token TEXT NOT NULL UNIQUE,
+  file_path TEXT NOT NULL,
+  expires_at TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_reports_user_month ON reports(user_phone, month);
+CREATE INDEX IF NOT EXISTS idx_reports_expires ON reports(expires_at);
+
