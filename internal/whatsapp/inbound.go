@@ -1,6 +1,7 @@
 package whatsapp
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -19,6 +20,9 @@ func InboundHandler(expStore *expense.Store, billStore *billing.Store, rp *billi
 	return func(c *fiber.Ctx) error {
 		from := c.FormValue("From") // "whatsapp:+91..."
 		body := strings.TrimSpace(c.FormValue("Body"))
+
+		fmt.Println("FROM:", from)
+		fmt.Println("BODY:", body)
 
 		phone := normalizeTwilioWhatsAppFrom(from)
 		if phone == "" {
@@ -91,9 +95,9 @@ func normalizeTwilioWhatsAppFrom(from string) string {
 }
 
 func writeTwiML(c *fiber.Ctx, msg string) {
-	c.Set("Content-Type", "application/xml")
+	c.Set("Content-Type", "text/xml")
 	c.Status(http.StatusOK)
-	_ = c.SendString("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<Response><Message>" + escapeXML(msg) + "</Message></Response>")
+	_ = c.SendString("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<Response>\n\t<Message>" + escapeXML(msg) + "</Message>\n</Response>")
 }
 
 func escapeXML(s string) string {
