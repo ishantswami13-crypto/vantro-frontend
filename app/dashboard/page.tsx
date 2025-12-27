@@ -1,18 +1,20 @@
 ﻿"use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ArrowUpRight, RefreshCw, LogOut } from "lucide-react";
 import CountUp from "react-countup";
 import { Card, CardContent, CardHeader } from "@/app/components/ui/Card";
 import { Button } from "@/app/components/ui/Button";
 import { Toast } from "@/app/components/ui/Toast";
 import { TransactionRow } from "@/app/components/TransactionRow";
+import { EmptyState } from "@/app/components/EmptyState";
 import { Modal } from "@/app/components/ui/Modal";
 import AddTransactionForm from "@/app/components/AddTransactionForm";
 
 export default function DashboardPage() {
   const [error, setError] = useState<string | null>("invalid or missing API key");
   const [open, setOpen] = useState(false);
+  const [tx, setTx] = useState<any[]>([]);
 
   const stats = useMemo(
     () => [
@@ -22,6 +24,11 @@ export default function DashboardPage() {
     ],
     []
   );
+
+  useEffect(() => {
+    const stored = JSON.parse(localStorage.getItem("tx") || "[]");
+    setTx(stored);
+  }, []);
 
   return (
     <div className="min-h-screen text-white">
@@ -98,10 +105,26 @@ export default function DashboardPage() {
               <button className="text-xs text-white/60 hover:text-white">View all →</button>
             </CardHeader>
             <CardContent>
-              <div className="space-y-3">
-                <TransactionRow title="Client Payment" category="Income" amount={12000} type="income" />
-                <TransactionRow title="AWS Bill" category="Infra" amount={2200} type="expense" />
-              </div>
+              {tx.length === 0 ? (
+                <EmptyState
+                  title="No activity yet"
+                  subtitle="Your transactions will appear here once you start using VANTRO."
+                  action="Add your first transaction"
+                  onAction={() => setOpen(true)}
+                />
+              ) : (
+                <div className="space-y-2">
+                  {tx.slice(0, 5).map((t) => (
+                    <TransactionRow
+                      key={t.id}
+                      title={t.title}
+                      category={t.category}
+                      amount={t.amount}
+                      type={t.type}
+                    />
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
         </section>
@@ -122,7 +145,13 @@ export default function DashboardPage() {
         </div>
 
         <div className="mt-5">
-          <AddTransactionForm onDone={() => setOpen(false)} />
+          <AddTransactionForm
+            onDone={() => {
+              const stored = JSON.parse(localStorage.getItem("tx") || "[]");
+              setTx(stored);
+              setOpen(false);
+            }}
+          />
         </div>
       </Modal>
     </div>
