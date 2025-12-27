@@ -7,9 +7,12 @@ import { Card, CardContent, CardHeader } from "@/app/components/ui/Card";
 import { Button } from "@/app/components/ui/Button";
 import { Toast } from "@/app/components/ui/Toast";
 import { TransactionRow } from "@/app/components/TransactionRow";
+import { Modal } from "@/app/components/ui/Modal";
+import AddTransactionForm from "@/app/components/AddTransactionForm";
 
 export default function DashboardPage() {
   const [error, setError] = useState<string | null>("invalid or missing API key");
+  const [open, setOpen] = useState(false);
 
   const stats = useMemo(
     () => [
@@ -64,7 +67,7 @@ export default function DashboardPage() {
             <p className="mt-1 text-sm text-white/55">Your money, clean and controlled.</p>
           </div>
 
-          <Button className="rounded-2xl px-5 py-3 text-sm">
+          <Button className="rounded-2xl px-5 py-3 text-sm" onClick={() => setOpen(true)}>
             Add transaction
             <ArrowUpRight className="ml-2 h-4 w-4" />
           </Button>
@@ -103,6 +106,25 @@ export default function DashboardPage() {
           </Card>
         </section>
       </main>
+
+      <Modal open={open} onClose={() => setOpen(false)}>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <div className="text-lg font-semibold">Add transaction</div>
+            <div className="text-sm text-white/50">Income or expense in 10 seconds.</div>
+          </div>
+          <button
+            onClick={() => setOpen(false)}
+            className="rounded-xl border border-white/10 bg-white/5 px-3 py-1 text-sm hover:bg-white/10 transition"
+          >
+            Close
+          </button>
+        </div>
+
+        <div className="mt-5">
+          <AddTransactionForm onDone={() => setOpen(false)} />
+        </div>
+      </Modal>
     </div>
   );
 }
