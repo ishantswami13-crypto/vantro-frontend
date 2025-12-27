@@ -10,6 +10,7 @@ import { TransactionRow } from "@/app/components/TransactionRow";
 import { EmptyState } from "@/app/components/EmptyState";
 import { Modal } from "@/app/components/ui/Modal";
 import AddTransactionForm from "@/app/components/AddTransactionForm";
+import { BalanceRing } from "@/app/components/BalanceRing";
 
 export default function DashboardPage() {
   const [error, setError] = useState<string | null>("invalid or missing API key");
@@ -29,6 +30,12 @@ export default function DashboardPage() {
     const stored = JSON.parse(localStorage.getItem("tx") || "[]");
     setTx(stored);
   }, []);
+
+  const totals = useMemo(() => {
+    const income = tx.filter((t) => t.type === "income").reduce((s, t) => s + Number(t.amount || 0), 0);
+    const expense = tx.filter((t) => t.type === "expense").reduce((s, t) => s + Number(t.amount || 0), 0);
+    return { income, expense, net: income - expense };
+  }, [tx]);
 
   return (
     <div className="min-h-screen text-white">
@@ -80,15 +87,19 @@ export default function DashboardPage() {
           </Button>
         </div>
 
+        <section className="mt-8">
+          <BalanceRing income={totals.income} expense={totals.expense} />
+        </section>
+
         <section className="mt-8 grid gap-4 md:grid-cols-3">
-          {stats.map((s) => (
+          {[{ label: "Income", value: totals.income }, { label: "Expense", value: totals.expense }, { label: "Net", value: totals.net }].map((s) => (
             <Card key={s.label}>
               <CardHeader>
                 <div className="text-xs text-white/50">{s.label}</div>
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-semibold tabular-nums tracking-tight">
-                  ₹<CountUp end={s.value} duration={1.2} separator="," />
+                  <CountUp end={s.value} duration={1.2} separator="," prefix="₹" />
                 </div>
               </CardContent>
             </Card>
