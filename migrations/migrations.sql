@@ -381,3 +381,22 @@ CREATE INDEX IF NOT EXISTS idx_points_ledger_user_id_created_at
   ON points_ledger(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_redemptions_user_id_created_at
   ON redemptions(user_id, created_at DESC);
+
+-- Vantro Expense Memory: expenses table
+
+CREATE TABLE IF NOT EXISTS expenses (
+  id BIGSERIAL PRIMARY KEY,
+  user_phone TEXT NOT NULL,
+  amount_paise BIGINT NOT NULL CHECK (amount_paise > 0),
+  currency TEXT NOT NULL DEFAULT 'INR',
+  category TEXT NOT NULL DEFAULT 'MISC',
+  note TEXT,
+  source TEXT NOT NULL DEFAULT 'manual', -- manual | whatsapp | app | upi (future)
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_expenses_user_phone_created_at
+  ON expenses (user_phone, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_expenses_category
+  ON expenses (category);

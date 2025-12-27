@@ -14,7 +14,7 @@ func NewRepository(pool *pgxpool.Pool) *Repository {
 	return &Repository{Pool: pool}
 }
 
-func (r *Repository) InsertExpense(ctx context.Context, exp *Expense) (string, error) {
+func (r *Repository) InsertExpense(ctx context.Context, exp *LegacyExpense) (string, error) {
 	var id string
 	err := r.Pool.QueryRow(
 		ctx,
@@ -34,7 +34,7 @@ func (r *Repository) InsertExpense(ctx context.Context, exp *Expense) (string, e
 	return id, nil
 }
 
-func (r *Repository) ListExpensesByUser(ctx context.Context, userID string) ([]Expense, error) {
+func (r *Repository) ListExpensesByUser(ctx context.Context, userID string) ([]LegacyExpense, error) {
 	rows, err := r.Pool.Query(ctx, `
 		SELECT id, user_id, vendor_name, amount, currency, spent_on, note, created_at
 		FROM expenses
@@ -47,9 +47,9 @@ func (r *Repository) ListExpensesByUser(ctx context.Context, userID string) ([]E
 	}
 	defer rows.Close()
 
-	out := make([]Expense, 0)
+	out := make([]LegacyExpense, 0)
 	for rows.Next() {
-		var e Expense
+		var e LegacyExpense
 		if err := rows.Scan(
 			&e.ID,
 			&e.UserID,

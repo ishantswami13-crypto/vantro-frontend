@@ -120,6 +120,7 @@ func main() {
 	pointsHandler := points.NewHandler(pool)
 	simpleTxRepo := transactions.NewSimpleRepo(pool)
 	simpleTxHandler := transactions.NewSimpleHandler(simpleTxRepo)
+	expenseStore := &expense.Store{DB: db}
 	apiServer := &appapi.Server{DB: db}
 
 	authMiddleware := buildJWTMiddleware(pool)
@@ -131,6 +132,11 @@ func main() {
 	app.Get("/me/points/ledger", authMiddleware, apiServer.PointsLedger)
 	app.Get("/rewards", apiServer.Rewards) // ok public
 	app.Post("/redeem", authMiddleware, apiServer.Redeem)
+
+	// Expense v2 endpoints (phone-based)
+	app.Post("/v1/expense/add", expense.AddExpenseHandler(expenseStore))
+	app.Get("/v1/expense/list", expense.ListExpensesHandler(expenseStore))
+	app.Get("/v1/expense/summary", expense.MonthlySummaryHandler(expenseStore))
 
 	r := &router.Router{
 		AuthHandler:         authHandler,

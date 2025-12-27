@@ -43,7 +43,7 @@ func (h *Handler) CreateExpense(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusBadRequest, "spent_on must be YYYY-MM-DD")
 	}
 
-	exp := &Expense{
+	exp := &LegacyExpense{
 		UserID:     userID,
 		VendorName: req.VendorName,
 		Amount:     req.Amount,

@@ -2,7 +2,7 @@ package expense
 
 import "time"
 
-type Expense struct {
+type LegacyExpense struct {
 	ID         string    `db:"id" json:"id"`
 	UserID     string    `db:"user_id" json:"user_id"`
 	VendorName string    `db:"vendor_name" json:"vendor_name"`
