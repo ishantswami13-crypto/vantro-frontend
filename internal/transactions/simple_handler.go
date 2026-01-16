@@ -4,6 +4,8 @@ import (
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
+
+	"github.com/ishantswami13-crypto/vantro-backend/internal/audit"
 )
 
 type SimpleHandler struct {
@@ -29,6 +31,29 @@ func (h *SimpleHandler) Create(c *fiber.Ctx) error {
 	if err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, err.Error())
 	}
+
+	// Best-effort audit
+	uid := userID
+	var entityID *string
+	if tx.ID != "" {
+		entityID = &tx.ID
+	}
+	ip := strings.TrimSpace(c.IP())
+	ua := strings.TrimSpace(c.Get("User-Agent"))
+	entry := audit.Entry{
+		UserID:     &uid,
+		Action:     "transaction_create",
+		EntityType: "transaction",
+		EntityID:   entityID,
+		Metadata:   c.Body(),
+	}
+	if ip != "" {
+		entry.IP = &ip
+	}
+	if ua != "" {
+		entry.UserAgent = &ua
+	}
+	_ = audit.Write(c.UserContext(), h.Repo.Pool, entry)
 
 	return c.JSON(tx)
 }

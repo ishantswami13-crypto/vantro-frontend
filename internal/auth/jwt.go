@@ -3,7 +3,9 @@ package auth
 import (
 	"context"
 	"errors"
+	"log"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -14,7 +16,15 @@ type ctxKey string
 
 const userIDKey ctxKey = "user_id"
 
-var jwtSecret = []byte("vantro_super_secret_change_me")
+var jwtSecret []byte
+
+func init() {
+	secret := strings.TrimSpace(os.Getenv("JWT_SECRET"))
+	if secret == "" {
+		log.Fatal("JWT_SECRET is not set")
+	}
+	jwtSecret = []byte(secret)
+}
 
 // Middleware is a net/http middleware for JWT-protected endpoints.
 // It is currently unused in the Fiber stack but kept for compatibility with simple http mux flows.

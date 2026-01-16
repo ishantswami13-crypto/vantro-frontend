@@ -2,6 +2,9 @@ package income
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"strings"
 	"time"
@@ -23,6 +26,9 @@ func (h *Handler) CreateIncome(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusUnauthorized, "unauthorized")
 	}
 
+	idemKey := strings.TrimSpace(c.Get("Idempotency-Key"))
+	bodyBytes := c.Body()
+
 	var req CreateIncomeRequest
 	if err := c.BodyParser(&req); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, "invalid body")
@@ -43,6 +49,27 @@ func (h *Handler) CreateIncome(c *fiber.Ctx) error {
 	}
 
 	ctx := userContext(c)
+	requestHash := ""
+	if idemKey != "" {
+		sum := sha256.Sum256(append([]byte(c.Method()+" "+c.Path()+" "), bodyBytes...))
+		requestHash = hex.EncodeToString(sum[:])
+		// Check for existing idempotent response
+		var status int
+		var storedBody string
+		err := h.Repo.Pool.QueryRow(
+			ctx,
+			`SELECT response_status, response_body
+             FROM idempotency_keys
+             WHERE owner_id = $1 AND idempotency_key = $2`,
+			userID, idemKey,
+		).Scan(&status, &storedBody)
+		if err == nil {
+			c.Status(status)
+			c.Type("application/json")
+			return c.SendString(storedBody)
+		}
+	}
+
 	inc := &Income{
 		UserID:     userID,
 		ClientName: req.ClientName,
@@ -59,10 +86,29 @@ func (h *Handler) CreateIncome(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusInternalServerError, "failed to add income: "+err.Error())
 	}
 
-	return c.Status(fiber.StatusCreated).JSON(CreateIncomeResponse{
+	resp := CreateIncomeResponse{
 		ID:      id,
 		Message: "income added",
-	})
+	}
+
+	if idemKey != "" && requestHash != "" {
+		if buf, mErr := json.Marshal(resp); mErr == nil {
+			_, _ = h.Repo.Pool.Exec(
+				ctx,
+				`INSERT INTO idempotency_keys (owner_id, endpoint, idempotency_key, request_hash, response_status, response_body)
+                 VALUES ($1, $2, $3, $4, $5, $6)
+                 ON CONFLICT (owner_id, idempotency_key) DO NOTHING`,
+				userID,
+				"/api/incomes",
+				idemKey,
+				requestHash,
+				fiber.StatusCreated,
+				string(buf),
+			)
+		}
+	}
+
+	return c.Status(fiber.StatusCreated).JSON(resp)
 }
 
 func (h *Handler) ListIncomes(c *fiber.Ctx) error {

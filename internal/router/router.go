@@ -33,11 +33,14 @@ type Router struct {
 }
 
 func (r *Router) RegisterRoutes(app *fiber.App) {
+	authLimiter := RateLimitAuth()
+	writeLimiter := RateLimitWrite()
+
 	if r.AuthHandler != nil {
-		app.Post("/api/auth/signup", r.AuthHandler.Signup)
-		app.Post("/api/auth/login", r.AuthHandler.Login)
-		app.Post("/auth/demo", r.AuthHandler.Demo)
-		app.Post("/api/auth/demo", r.AuthHandler.Demo)
+		app.Post("/api/auth/signup", authLimiter, r.AuthHandler.Signup)
+		app.Post("/api/auth/login", authLimiter, r.AuthHandler.Login)
+		app.Post("/auth/demo", authLimiter, r.AuthHandler.Demo)
+		app.Post("/api/auth/demo", authLimiter, r.AuthHandler.Demo)
 		app.Get("/api/me", r.AuthMW, r.AuthHandler.Me)
 
 		if strings.EqualFold(os.Getenv("DEBUG"), "true") {
@@ -47,20 +50,20 @@ func (r *Router) RegisterRoutes(app *fiber.App) {
 
 	if r.IncomeHandler != nil {
 		if r.AuthMW != nil {
-			app.Post("/api/incomes", r.AuthMW, r.IncomeHandler.CreateIncome)
+			app.Post("/api/incomes", r.AuthMW, writeLimiter, r.IncomeHandler.CreateIncome)
 			app.Get("/api/incomes", r.AuthMW, r.IncomeHandler.ListIncomes)
 		} else {
-			app.Post("/api/incomes", r.IncomeHandler.CreateIncome)
+			app.Post("/api/incomes", writeLimiter, r.IncomeHandler.CreateIncome)
 			app.Get("/api/incomes", r.IncomeHandler.ListIncomes)
 		}
 	}
 
 	if r.ExpenseHandler != nil {
 		if r.AuthMW != nil {
-			app.Post("/api/expenses", r.AuthMW, r.ExpenseHandler.CreateExpense)
+			app.Post("/api/expenses", r.AuthMW, writeLimiter, r.ExpenseHandler.CreateExpense)
 			app.Get("/api/expenses", r.AuthMW, r.ExpenseHandler.ListExpenses)
 		} else {
-			app.Post("/api/expenses", r.ExpenseHandler.CreateExpense)
+			app.Post("/api/expenses", writeLimiter, r.ExpenseHandler.CreateExpense)
 			app.Get("/api/expenses", r.ExpenseHandler.ListExpenses)
 		}
 	}
@@ -75,11 +78,11 @@ func (r *Router) RegisterRoutes(app *fiber.App) {
 
 	if r.TxHandler != nil {
 		if r.AuthMW != nil {
-			app.Post("/api/transactions", r.AuthMW, r.TxHandler.Create)
+			app.Post("/api/transactions", r.AuthMW, writeLimiter, r.TxHandler.Create)
 			app.Get("/api/transactions/summary", r.AuthMW, r.TxHandler.Summary)
 			app.Get("/api/transactions", r.AuthMW, r.TxHandler.List)
 		} else {
-			app.Post("/api/transactions", r.TxHandler.Create)
+			app.Post("/api/transactions", writeLimiter, r.TxHandler.Create)
 			app.Get("/api/transactions/summary", r.TxHandler.Summary)
 			app.Get("/api/transactions", r.TxHandler.List)
 		}
@@ -113,7 +116,7 @@ func (r *Router) RegisterRoutes(app *fiber.App) {
 
 	// New unified transactions endpoints
 	if r.SimpleTxHandler != nil && r.AuthMW != nil {
-		app.Post("/transactions", r.AuthMW, r.SimpleTxHandler.Create)
+		app.Post("/transactions", r.AuthMW, writeLimiter, r.SimpleTxHandler.Create)
 		app.Get("/me/transactions", r.AuthMW, r.SimpleTxHandler.List)
 	}
 
@@ -140,6 +143,6 @@ func (r *Router) RegisterRoutes(app *fiber.App) {
 		app.Get("/me/points", r.AuthMW, r.PointsHandler.PointsSummary)
 		app.Get("/me/points/ledger", r.AuthMW, r.PointsHandler.PointsLedger)
 		app.Get("/rewards", r.AuthMW, r.PointsHandler.Rewards)
-		app.Post("/redeem", r.AuthMW, r.PointsHandler.Redeem)
+		app.Post("/redeem", r.AuthMW, writeLimiter, r.PointsHandler.Redeem)
 	}
 }

@@ -40,6 +40,9 @@ Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/bui
 Run the API with an admin key:
 
 ```powershell
+$env:DATABASE_URL="postgres://user:pass@localhost:5432/vantro"
+$env:API_KEY="your_public_api_key_for_frontend"
+$env:JWT_SECRET="a-long-random-secret-string" # REQUIRED: used for signing JWTs
 $env:ADMIN_KEY="vantro_admin_super_secret_123"
 go run ./cmd/api
 ```

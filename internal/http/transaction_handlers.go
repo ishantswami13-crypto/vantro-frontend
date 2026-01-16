@@ -26,13 +26,20 @@ func (h *TransactionHandler) Create(c *fiber.Ctx) error {
 	}
 
 	var body struct {
-		Type        string  `json:"type"`
-		Amount      float64 `json:"amount"`
-		Description string  `json:"description"`
+		Type        string `json:"type"`
+		Amount      int64  `json:"amount"`
+		Description string `json:"description"`
 	}
 
 	if err := c.BodyParser(&body); err != nil {
 		return fiber.ErrBadRequest
+	}
+
+	if body.Type != "income" && body.Type != "expense" {
+		return fiber.NewError(fiber.StatusBadRequest, "type must be income or expense")
+	}
+	if body.Amount <= 0 {
+		return fiber.NewError(fiber.StatusBadRequest, "amount must be positive (paise)")
 	}
 
 	businessID, err := h.ensureBusiness(c, userID)
@@ -61,7 +68,7 @@ func (h *TransactionHandler) List(c *fiber.Ctx) error {
 
 	rows, err := h.DB.Query(
 		c.Context(),
-		`SELECT id, type, amount::float8, COALESCE(note, ''), created_at
+		`SELECT id, type, amount, COALESCE(note, ''), created_at
 		 FROM transactions
 		 WHERE user_id = $1
 		 ORDER BY created_at DESC`,
@@ -78,7 +85,7 @@ func (h *TransactionHandler) List(c *fiber.Ctx) error {
 			id        int64
 			ttype     string
 			desc      string
-			amount    float64
+			amount    int64
 			createdAt time.Time
 		)
 

@@ -2,11 +2,15 @@ package http
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -15,10 +19,10 @@ type TransactionsHandler struct {
 }
 
 type createTxnReq struct {
-	Type       string  `json:"type"`   // "income" | "expense"
-	Amount     float64 `json:"amount"` // >= 0
-	Note       string  `json:"note"`
-	BusinessID int64   `json:"business_id"`
+	Type       string `json:"type"`   // "income" | "expense"
+	Amount     int64  `json:"amount"` // paise, > 0
+	Note       string `json:"note"`
+	BusinessID int64  `json:"business_id"`
 }
 
 func NewTransactionsHandler(db *pgxpool.Pool) *TransactionsHandler {
@@ -34,6 +38,9 @@ func (h *TransactionsHandler) Create(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusUnauthorized, "missing user")
 	}
 
+	idemKey := strings.TrimSpace(c.Get("Idempotency-Key"))
+	bodyBytes := c.Body()
+
 	var req createTxnReq
 	if err := c.BodyParser(&req); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, "invalid json")
@@ -41,8 +48,8 @@ func (h *TransactionsHandler) Create(c *fiber.Ctx) error {
 	if req.Type != "income" && req.Type != "expense" {
 		return fiber.NewError(fiber.StatusBadRequest, "type must be income or expense")
 	}
-	if req.Amount < 0 {
-		return fiber.NewError(fiber.StatusBadRequest, "amount must be >= 0")
+	if req.Amount <= 0 {
+		return fiber.NewError(fiber.StatusBadRequest, "amount must be positive (paise)")
 	}
 	if req.BusinessID <= 0 {
 		return fiber.NewError(fiber.StatusBadRequest, "business_id required")
@@ -50,6 +57,30 @@ func (h *TransactionsHandler) Create(c *fiber.Ctx) error {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+
+	requestHash := ""
+	if idemKey != "" {
+		sum := sha256.Sum256(append([]byte(c.Method()+" "+c.Path()+" "), bodyBytes...))
+		requestHash = hex.EncodeToString(sum[:])
+
+		var status int
+		var storedBody string
+		err := h.DB.QueryRow(
+			ctx,
+			`SELECT response_status, response_body
+             FROM idempotency_keys
+             WHERE owner_id = $1 AND idempotency_key = $2`,
+			userID, idemKey,
+		).Scan(&status, &storedBody)
+		if err == nil {
+			c.Status(status)
+			c.Type("application/json")
+			return c.SendString(storedBody)
+		}
+		if err != nil && err != pgx.ErrNoRows {
+			// On unexpected error, continue without idempotent shortcut.
+		}
+	}
 
 	var belongs bool
 	if err := h.DB.QueryRow(ctx,
@@ -73,9 +104,28 @@ func (h *TransactionsHandler) Create(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusInternalServerError, "could not create transaction")
 	}
 
-	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
+	resp := fiber.Map{
 		"id": id,
-	})
+	}
+
+	if idemKey != "" && requestHash != "" {
+		if buf, mErr := json.Marshal(resp); mErr == nil {
+			_, _ = h.DB.Exec(
+				ctx,
+				`INSERT INTO idempotency_keys (owner_id, endpoint, idempotency_key, request_hash, response_status, response_body)
+                 VALUES ($1, $2, $3, $4, $5, $6)
+                 ON CONFLICT (owner_id, idempotency_key) DO NOTHING`,
+				userID,
+				"/api/transactions",
+				idemKey,
+				requestHash,
+				fiber.StatusCreated,
+				string(buf),
+			)
+		}
+	}
+
+	return c.Status(fiber.StatusCreated).JSON(resp)
 }
 
 func (h *TransactionsHandler) Summary(c *fiber.Ctx) error {
@@ -93,13 +143,13 @@ func (h *TransactionsHandler) Summary(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	var income float64
-	var expense float64
+	var income int64
+	var expense int64
 
 	err = h.DB.QueryRow(ctx, `
 		SELECT
-			COALESCE(SUM(CASE WHEN type='income'  THEN amount END), 0)::float8 AS income,
-			COALESCE(SUM(CASE WHEN type='expense' THEN amount END), 0)::float8 AS expense
+			COALESCE(SUM(CASE WHEN type='income'  THEN amount END)::bigint, 0) AS income,
+			COALESCE(SUM(CASE WHEN type='expense' THEN amount END)::bigint, 0) AS expense
 		FROM transactions
 		WHERE user_id = $1 AND business_id = $2
 	`, userID, businessID).Scan(&income, &expense)
@@ -127,18 +177,18 @@ func (h *TransactionsHandler) List(c *fiber.Ctx) error {
 	}
 
 	type txn struct {
-		ID        int64   `json:"id"`
-		Type      string  `json:"type"`
-		Amount    float64 `json:"amount"`
-		Note      string  `json:"note"`
-		CreatedAt string  `json:"created_at"`
+		ID        int64  `json:"id"`
+		Type      string `json:"type"`
+		Amount    int64  `json:"amount"`
+		Note      string `json:"note"`
+		CreatedAt string `json:"created_at"`
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	rows, err := h.DB.Query(ctx, `
-		SELECT id, type, amount::float8, COALESCE(note,''), created_at
+		SELECT id, type, amount, COALESCE(note,''), created_at
 		FROM transactions
 		WHERE user_id = $1 AND business_id = $2
 		ORDER BY created_at DESC

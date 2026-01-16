@@ -4,6 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"math"
 	"strconv"
 	"strings"
@@ -28,6 +31,9 @@ func (s *Server) CreateTransaction(c *fiber.Ctx) error {
 		return jsonErr(c, fiber.StatusUnauthorized, "unauthorized")
 	}
 
+	idemKey := strings.TrimSpace(c.Get("Idempotency-Key"))
+	bodyBytes := c.Body()
+
 	var body createTxnRequest
 	if err := c.BodyParser(&body); err != nil {
 		return jsonErr(c, fiber.StatusBadRequest, "invalid body")
@@ -41,6 +47,31 @@ func (s *Server) CreateTransaction(c *fiber.Ctx) error {
 	}
 
 	ctx := c.UserContext()
+
+	requestHash := ""
+	if idemKey != "" {
+		sum := sha256.Sum256(append([]byte(c.Method()+" "+c.Path()+" "), bodyBytes...))
+		requestHash = hex.EncodeToString(sum[:])
+
+		var status int
+		var storedBody string
+		err := s.DB.QueryRowContext(
+			ctx,
+			`SELECT response_status, response_body
+             FROM idempotency_keys
+             WHERE owner_id = $1 AND idempotency_key = $2`,
+			userID, idemKey,
+		).Scan(&status, &storedBody)
+		if err == nil {
+			c.Status(status)
+			c.Type("application/json")
+			return c.SendString(storedBody)
+		}
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			// fall through on unexpected error
+		}
+	}
+
 	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return jsonErr(c, fiber.StatusInternalServerError, err.Error())
@@ -72,13 +103,32 @@ func (s *Server) CreateTransaction(c *fiber.Ctx) error {
 		return jsonErr(c, fiber.StatusInternalServerError, err.Error())
 	}
 
-	return c.JSON(fiber.Map{
+	resp := fiber.Map{
 		"id":             id,
 		"amount":         body.Amount,
 		"direction":      body.Direction,
 		"created_at":     createdAt.Format(time.RFC3339),
 		"points_awarded": pointsAwarded,
-	})
+	}
+
+	if idemKey != "" && requestHash != "" {
+		if buf, mErr := json.Marshal(resp); mErr == nil {
+			_, _ = s.DB.ExecContext(
+				ctx,
+				`INSERT INTO idempotency_keys (owner_id, endpoint, idempotency_key, request_hash, response_status, response_body)
+                 VALUES ($1, $2, $3, $4, $5, $6)
+                 ON CONFLICT (owner_id, idempotency_key) DO NOTHING`,
+				userID,
+				"/transactions",
+				idemKey,
+				requestHash,
+				fiber.StatusOK,
+				string(buf),
+			)
+		}
+	}
+
+	return c.JSON(resp)
 }
 
 func (s *Server) ListTransactions(c *fiber.Ctx) error {

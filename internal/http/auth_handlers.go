@@ -3,6 +3,7 @@ package http
 import (
 	"context"
 	"errors"
+	"log"
 	"os"
 	"strings"
 	"time"
@@ -39,11 +40,17 @@ type debugUserResponse struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-func generateToken(userID string) (string, error) {
-	secret := []byte(os.Getenv("JWT_SECRET"))
-	if len(secret) == 0 {
-		secret = []byte("supersecretapikey")
+var jwtSecret []byte
+
+func init() {
+	secret := strings.TrimSpace(os.Getenv("JWT_SECRET"))
+	if secret == "" {
+		log.Fatal("JWT_SECRET is not set")
 	}
+	jwtSecret = []byte(secret)
+}
+
+func generateToken(userID string) (string, error) {
 
 	claims := jwt.MapClaims{
 		"user_id": userID,
@@ -51,7 +58,7 @@ func generateToken(userID string) (string, error) {
 	}
 
 	t := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return t.SignedString(secret)
+	return t.SignedString(jwtSecret)
 }
 
 func (h *AuthHandler) Signup(c *fiber.Ctx) error {

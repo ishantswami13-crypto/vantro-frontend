@@ -1,12 +1,20 @@
 package points
 
 import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/ishantswami13-crypto/vantro-backend/internal/audit"
 )
 
 type Handler struct {
@@ -127,6 +135,9 @@ func (h *Handler) Redeem(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusUnauthorized, "unauthorized")
 	}
 
+	idemKey := strings.TrimSpace(c.Get("Idempotency-Key"))
+	bodyBytes := c.Body()
+
 	var body struct {
 		RewardID int64 `json:"reward_id"`
 	}
@@ -137,10 +148,37 @@ func (h *Handler) Redeem(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusBadRequest, "reward_id required")
 	}
 
+	ctx, cancel := context.WithTimeout(c.UserContext(), 5*time.Second)
+	defer cancel()
+
+	requestHash := ""
+	if idemKey != "" {
+		sum := sha256.Sum256(append([]byte(c.Method()+" "+c.Path()+" "), bodyBytes...))
+		requestHash = hex.EncodeToString(sum[:])
+
+		var statusCode int
+		var storedBody string
+		err := h.Pool.QueryRow(
+			ctx,
+			`SELECT response_status, response_body
+             FROM idempotency_keys
+             WHERE owner_id = $1 AND idempotency_key = $2`,
+			userID, idemKey,
+		).Scan(&statusCode, &storedBody)
+		if err == nil {
+			c.Status(statusCode)
+			c.Type("application/json")
+			return c.SendString(storedBody)
+		}
+		if err != nil && err != pgx.ErrNoRows {
+			// fall through on unexpected error
+		}
+	}
+
 	// fetch cost to pass
 	var cost int64
 	var status string
-	err := h.Pool.QueryRow(c.UserContext(), `SELECT points_cost, status FROM rewards_catalog WHERE id = $1`, body.RewardID).
+	err := h.Pool.QueryRow(ctx, `SELECT points_cost, status FROM rewards_catalog WHERE id = $1`, body.RewardID).
 		Scan(&cost, &status)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -152,7 +190,7 @@ func (h *Handler) Redeem(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusBadRequest, "reward not active")
 	}
 
-	redemptionID, err := SpendPoints(c.UserContext(), h.Pool, userID, cost, body.RewardID)
+	redemptionID, err := SpendPoints(ctx, h.Pool, userID, cost, body.RewardID)
 	if err != nil {
 		if strings.Contains(err.Error(), "insufficient") {
 			return fiber.NewError(fiber.StatusBadRequest, "insufficient points")
@@ -163,10 +201,51 @@ func (h *Handler) Redeem(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusInternalServerError, "redeem failed: "+err.Error())
 	}
 
-	return c.JSON(fiber.Map{
+	resp := fiber.Map{
 		"ok":            true,
 		"redemption_id": redemptionID,
 		"status":        "REQUESTED",
 		"points_spent":  cost,
-	})
+	}
+
+	// Best-effort audit
+	ip := strings.TrimSpace(c.IP())
+	ua := strings.TrimSpace(c.Get("User-Agent"))
+	entry := audit.Entry{
+		UserID:     &userID,
+		Action:     "reward_redeem",
+		EntityType: "reward",
+		EntityID:   nil,
+		Metadata:   bodyBytes,
+	}
+	if redemptionID > 0 {
+		idStr := strconv.FormatInt(redemptionID, 10)
+		entry.EntityID = &idStr
+	}
+	if ip != "" {
+		entry.IP = &ip
+	}
+	if ua != "" {
+		entry.UserAgent = &ua
+	}
+	_ = audit.Write(ctx, h.Pool, entry)
+
+	if idemKey != "" && requestHash != "" {
+		if buf, mErr := json.Marshal(resp); mErr == nil {
+			_, _ = h.Pool.Exec(
+				ctx,
+				`INSERT INTO idempotency_keys (owner_id, endpoint, idempotency_key, request_hash, response_status, response_body)
+                 VALUES ($1, $2, $3, $4, $5, $6)
+                 ON CONFLICT (owner_id, idempotency_key) DO NOTHING`,
+				userID,
+				"/redeem",
+				idemKey,
+				requestHash,
+				fiber.StatusOK,
+				string(buf),
+			)
+		}
+	}
+
+	return c.JSON(resp)
 }

@@ -2,6 +2,9 @@ package expense
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"strings"
 	"time"
@@ -25,6 +28,9 @@ func (h *Handler) CreateExpense(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusUnauthorized, "unauthorized")
 	}
 
+	idemKey := strings.TrimSpace(c.Get("Idempotency-Key"))
+	bodyBytes := c.Body()
+
 	var req CreateExpenseRequest
 	if err := c.BodyParser(&req); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, "invalid body")
@@ -43,6 +49,28 @@ func (h *Handler) CreateExpense(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusBadRequest, "spent_on must be YYYY-MM-DD")
 	}
 
+	ctx := userContext(c)
+	requestHash := ""
+	if idemKey != "" {
+		sum := sha256.Sum256(append([]byte(c.Method()+" "+c.Path()+" "), bodyBytes...))
+		requestHash = hex.EncodeToString(sum[:])
+
+		var status int
+		var storedBody string
+		err := h.Repo.Pool.QueryRow(
+			ctx,
+			`SELECT response_status, response_body
+             FROM idempotency_keys
+             WHERE owner_id = $1 AND idempotency_key = $2`,
+			userID, idemKey,
+		).Scan(&status, &storedBody)
+		if err == nil {
+			c.Status(status)
+			c.Type("application/json")
+			return c.SendString(storedBody)
+		}
+	}
+
 	exp := &LegacyExpense{
 		UserID:     userID,
 		VendorName: req.VendorName,
@@ -52,20 +80,39 @@ func (h *Handler) CreateExpense(c *fiber.Ctx) error {
 		Note:       req.Note,
 	}
 
-	id, err := h.Repo.InsertExpense(userContext(c), exp)
+	id, err := h.Repo.InsertExpense(ctx, exp)
 	if err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "failed to add expense: "+err.Error())
 	}
 
 	// Award points for outgoing payments
-	if _, err := points.AwardPointsForTransaction(userContext(c), h.Repo.Pool, userID, nil, exp.Amount, "expense_reward"); err != nil {
+	if _, err := points.AwardPointsForTransaction(ctx, h.Repo.Pool, userID, nil, exp.Amount, "expense_reward"); err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "failed to award points: "+err.Error())
 	}
 
-	return c.Status(fiber.StatusCreated).JSON(CreateExpenseResponse{
+	resp := CreateExpenseResponse{
 		ID:      id,
 		Message: "expense added",
-	})
+	}
+
+	if idemKey != "" && requestHash != "" {
+		if buf, mErr := json.Marshal(resp); mErr == nil {
+			_, _ = h.Repo.Pool.Exec(
+				ctx,
+				`INSERT INTO idempotency_keys (owner_id, endpoint, idempotency_key, request_hash, response_status, response_body)
+                 VALUES ($1, $2, $3, $4, $5, $6)
+                 ON CONFLICT (owner_id, idempotency_key) DO NOTHING`,
+				userID,
+				"/api/expenses",
+				idemKey,
+				requestHash,
+				fiber.StatusCreated,
+				string(buf),
+			)
+		}
+	}
+
+	return c.Status(fiber.StatusCreated).JSON(resp)
 }
 
 func (h *Handler) ListExpenses(c *fiber.Ctx) error {

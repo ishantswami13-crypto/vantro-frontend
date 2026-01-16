@@ -322,6 +322,19 @@ CREATE TABLE IF NOT EXISTS transactions_v1 (
 CREATE INDEX IF NOT EXISTS idx_transactions_v1_user_created_at
   ON transactions_v1(user_id, created_at DESC);
 
+-- Idempotency records scoped by logical "owner" (typically user_id or phone/client id)
+CREATE TABLE IF NOT EXISTS idempotency_keys (
+  id BIGSERIAL PRIMARY KEY,
+  owner_id TEXT NOT NULL,
+  endpoint TEXT NOT NULL,
+  idempotency_key TEXT NOT NULL,
+  request_hash TEXT NOT NULL,
+  response_status INT NOT NULL,
+  response_body TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (owner_id, idempotency_key)
+);
+
 -- points ledger + balance
 CREATE TABLE IF NOT EXISTS points_ledger (
   id BIGSERIAL PRIMARY KEY,
@@ -431,3 +444,98 @@ CREATE TABLE IF NOT EXISTS reports (
 CREATE INDEX IF NOT EXISTS idx_reports_user_month ON reports(user_phone, month);
 CREATE INDEX IF NOT EXISTS idx_reports_expires ON reports(expires_at);
 
+-- ============================
+-- AUDIT LOGS (append-only)
+-- ============================
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NULL,
+  action TEXT NOT NULL,
+  entity_type TEXT NOT NULL,
+  entity_id TEXT NULL,
+  ip TEXT NULL,
+  user_agent TEXT NULL,
+  metadata JSONB NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_user_created_at
+  ON audit_logs(user_id, created_at DESC);
+
+-- ============================
+-- PHASE 3: Money normalization
+-- Store all money as BIGINT paise (minor units)
+-- ============================
+
+-- 1) Convert legacy NUMERIC amounts → BIGINT paise
+-- If your `transactions.amount` is currently NUMERIC(12,2), convert:
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_name = 'transactions'
+      AND column_name = 'amount'
+      AND data_type IN ('numeric', 'decimal')
+  ) THEN
+    -- Convert numeric rupees to paise BIGINT
+    ALTER TABLE transactions
+      ALTER COLUMN amount TYPE BIGINT
+      USING ROUND(amount * 100)::BIGINT;
+  END IF;
+END $$;
+
+-- If user_transactions.amount exists and is not BIGINT, convert too:
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_name = 'user_transactions'
+      AND column_name = 'amount'
+      AND data_type IN ('numeric', 'decimal')
+  ) THEN
+    ALTER TABLE user_transactions
+      ALTER COLUMN amount TYPE BIGINT
+      USING ROUND(amount * 100)::BIGINT;
+  END IF;
+END $$;
+
+-- 2) Safety constraints (no negative money unless you explicitly want refunds)
+-- Adjust if you support negative adjustments.
+ALTER TABLE incomes
+  ADD CONSTRAINT IF NOT EXISTS incomes_amount_nonneg CHECK (amount >= 0);
+
+ALTER TABLE expenses
+  ADD CONSTRAINT IF NOT EXISTS expenses_amount_nonneg CHECK (amount >= 0);
+
+ALTER TABLE transactions
+  ADD CONSTRAINT IF NOT EXISTS transactions_amount_nonneg CHECK (amount >= 0);
+
+ALTER TABLE user_transactions
+  ADD CONSTRAINT IF NOT EXISTS user_transactions_amount_nonneg CHECK (amount >= 0);
+
+-- 3) Optional: upper bound protection (prevents insane values)
+-- Example: max ₹10,00,00,000 (10 crore) => paise = 1000000000 * 100 = 100000000000
+DO $$
+DECLARE
+  max_paise BIGINT := 100000000000;
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='transactions') THEN
+    ALTER TABLE transactions
+      ADD CONSTRAINT IF NOT EXISTS transactions_amount_max CHECK (amount <= max_paise);
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='user_transactions') THEN
+    ALTER TABLE user_transactions
+      ADD CONSTRAINT IF NOT EXISTS user_transactions_amount_max CHECK (amount <= max_paise);
+  END IF;
+
+  ALTER TABLE incomes
+    ADD CONSTRAINT IF NOT EXISTS incomes_amount_max CHECK (amount <= max_paise);
+
+  ALTER TABLE expenses
+    ADD CONSTRAINT IF NOT EXISTS expenses_amount_max CHECK (amount <= max_paise);
+END $$;
+
+
+✅ This makes money storage consistent + safe.

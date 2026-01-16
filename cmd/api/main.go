@@ -6,11 +6,12 @@ import (
 	"errors"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/gofiber/fiber/v2/middleware/cors"
+	"github.com/gofiber/fiber/v2/middleware/limiter"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -34,6 +35,9 @@ func main() {
 	if dsn == "" {
 		log.Fatal("DATABASE_URL is not set")
 	}
+
+	// Ensure JWT_SECRET is set before starting; this is required for all JWT operations.
+	_ = mustJWTSecret()
 
 	db, err := sql.Open("pgx", dsn)
 	if err != nil {
@@ -67,14 +71,16 @@ func main() {
 		},
 	})
 
-	app.Use(cors.New(cors.Config{
-		AllowOrigins: "http://localhost:3000,https://localhost:3000",
-		AllowMethods: "GET,POST,PUT,DELETE,OPTIONS",
-		AllowHeaders: "Origin, Content-Type, Accept, Authorization",
-	}))
+	app.Use(router.CorsMiddleware())
 	app.Use(requestLogger())
+	app.Use(apiKeyMiddleware())
 
 	app.Get("/health", func(c *fiber.Ctx) error {
+		return c.JSON(fiber.Map{
+			"ok": true,
+		})
+	})
+	app.Get("/healthz", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{
 			"ok": true,
 		})
@@ -91,10 +97,7 @@ func main() {
 	// Dev token endpoint
 	if strings.EqualFold(os.Getenv("ENV"), "dev") {
 		app.Get("/dev/token", func(c *fiber.Ctx) error {
-			secret := []byte(os.Getenv("JWT_SECRET"))
-			if len(secret) == 0 {
-				secret = []byte("vantro_super_secret_change_me")
-			}
+			secret := mustJWTSecret()
 			token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 				"user_id": "11111111-1111-1111-1111-111111111111",
 			})
@@ -132,12 +135,12 @@ func main() {
 	authMiddleware := buildJWTMiddleware(pool)
 
 	// V1 endpoints (JWT only)
-	app.Post("/transactions", authMiddleware, apiServer.CreateTransaction)
+	app.Post("/transactions", rateLimitTransactions(), authMiddleware, apiServer.CreateTransaction)
 	app.Get("/me/transactions", authMiddleware, apiServer.ListTransactions)
 	app.Get("/me/points", authMiddleware, apiServer.PointsSummary)
 	app.Get("/me/points/ledger", authMiddleware, apiServer.PointsLedger)
 	app.Get("/rewards", apiServer.Rewards) // ok public
-	app.Post("/redeem", authMiddleware, apiServer.Redeem)
+	app.Post("/redeem", rateLimitTransactions(), authMiddleware, apiServer.Redeem)
 
 	// Expense v2 endpoints (phone-based)
 	app.Post("/v1/expense/add", expense.AddExpenseHandler(expenseStore))
@@ -182,6 +185,27 @@ func main() {
 	log.Fatal(app.Listen(":" + port))
 }
 
+func rateLimitTransactions() fiber.Handler {
+	max := 60
+	if v := strings.TrimSpace(os.Getenv("RATE_LIMIT_TX_MAX")); v != "" {
+		if parsed, err := strconv.Atoi(v); err == nil && parsed > 0 {
+			max = parsed
+		}
+	}
+
+	window := time.Minute
+	if v := strings.TrimSpace(os.Getenv("RATE_LIMIT_TX_WINDOW_SECONDS")); v != "" {
+		if parsed, err := strconv.Atoi(v); err == nil && parsed > 0 {
+			window = time.Duration(parsed) * time.Second
+		}
+	}
+
+	return limiter.New(limiter.Config{
+		Max:        max,
+		Expiration: window,
+	})
+}
+
 func requestLogger() fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		start := time.Now()
@@ -192,11 +216,82 @@ func requestLogger() fiber.Handler {
 	}
 }
 
-func buildJWTMiddleware(pool *pgxpool.Pool) fiber.Handler {
-	secret := []byte(os.Getenv("JWT_SECRET"))
-	if len(secret) == 0 {
-		secret = []byte("vantro_super_secret_change_me")
+func apiKeyMiddleware() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		if c.Method() == "OPTIONS" {
+			return c.SendStatus(fiber.StatusNoContent)
+		}
+
+		path := strings.ToLower(strings.TrimSuffix(c.Path(), "/"))
+		if path == "/health" || path == "/api/health" {
+			return c.Next()
+		}
+		if path == "" {
+			path = "/"
+		}
+		if path == "/" || path == "/healthz" || path == "/api/auth/demo" || path == "/auth/demo" {
+			return c.Next()
+		}
+
+		env := strings.ToLower(strings.TrimSpace(os.Getenv("ENV")))
+		expected := strings.TrimSpace(os.Getenv("API_KEY"))
+
+		authHeader := strings.TrimSpace(c.Get("Authorization"))
+		hasBearer := strings.HasPrefix(strings.ToLower(authHeader), "bearer ")
+
+		// In production:
+		// - Browser calls should rely on JWT (Authorization: Bearer ...) only.
+		// - Non-browser/internal callers (e.g. admin tools) must present a server-side API_KEY.
+		if env == "production" {
+			if hasBearer {
+				// Browser (JWT) flow: do not enforce API_KEY.
+				return c.Next()
+			}
+
+			// Non-browser/internal: require API_KEY if configured.
+			if expected == "" {
+				return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "missing_api_key"})
+			}
+
+			key := strings.TrimSpace(c.Get("X-API-Key"))
+			if key == "" {
+				key = strings.TrimSpace(c.Get("x-api-key"))
+			}
+
+			if key == "" || key != expected {
+				return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "missing_api_key"})
+			}
+
+			return c.Next()
+		}
+
+		// Non-production (dev/stage): keep backward compatibility but allow JWT-only flows.
+		if hasBearer {
+			// Allow JWT-only calls without requiring API_KEY.
+			return c.Next()
+		}
+
+		// If no API_KEY is configured in non-production, allow all requests.
+		if expected == "" {
+			return c.Next()
+		}
+
+		// If API_KEY is set, require it for non-Bearer calls to match historical behavior.
+		key := strings.TrimSpace(c.Get("X-API-Key"))
+		if key == "" {
+			key = strings.TrimSpace(c.Get("x-api-key"))
+		}
+
+		if key == "" || key != expected {
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "missing_api_key"})
+		}
+
+		return c.Next()
 	}
+}
+
+func buildJWTMiddleware(pool *pgxpool.Pool) fiber.Handler {
+	secret := mustJWTSecret()
 
 	return func(c *fiber.Ctx) error {
 		authHeader := c.Get("Authorization")
@@ -241,4 +336,13 @@ func buildJWTMiddleware(pool *pgxpool.Pool) fiber.Handler {
 
 		return c.Next()
 	}
+}
+
+// mustJWTSecret loads JWT_SECRET from the environment or exits the process with a fatal log.
+func mustJWTSecret() []byte {
+	secret := strings.TrimSpace(os.Getenv("JWT_SECRET"))
+	if secret == "" {
+		log.Fatal("JWT_SECRET is not set")
+	}
+	return []byte(secret)
 }
