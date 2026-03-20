@@ -1,6 +1,7 @@
 import { logout } from "./auth";
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL;
+const API_KEY = process.env.NEXT_PUBLIC_API_KEY;
 
 function headersToObject(headers: HeadersInit | undefined): Record<string, string> {
   if (!headers) return {};
@@ -17,15 +18,20 @@ export async function apiFetch<T = any>(path: string, options: RequestInit = {})
   if (!BASE_URL) {
     throw new Error("NEXT_PUBLIC_API_URL is not set");
   }
+  if (!API_KEY) {
+    throw new Error("NEXT_PUBLIC_API_KEY is not set");
+  }
 
   const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+  const extraHeaders = headersToObject(options.headers);
 
   const res = await fetch(`${BASE_URL}${path}`, {
     ...options,
     headers: {
       "Content-Type": "application/json",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...headersToObject(options.headers),
+      ...extraHeaders,
+      "X-API-Key": API_KEY,
     },
   });
 

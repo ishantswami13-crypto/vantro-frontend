@@ -10,7 +10,7 @@ type Store struct {
 	DB *sql.DB
 }
 
-func (s *Store) IsActive(ctx context.Context, phone string) (bool, error) {
+func (s *Store) Status(ctx context.Context, phone string) (bool, *time.Time, error) {
 	const q = `
         SELECT status, current_period_end
         FROM subscriptions
@@ -20,15 +20,22 @@ func (s *Store) IsActive(ctx context.Context, phone string) (bool, error) {
 	var end sql.NullTime
 	err := s.DB.QueryRowContext(ctx, q, phone).Scan(&status, &end)
 	if err == sql.ErrNoRows {
-		return false, nil
+		return false, nil, nil
 	}
 	if err != nil {
-		return false, err
+		return false, nil, err
 	}
 	if status != "active" || !end.Valid {
-		return false, nil
+		return false, nil, nil
 	}
-	return time.Now().Before(end.Time), nil
+
+	active := time.Now().Before(end.Time)
+	return active, &end.Time, nil
+}
+
+func (s *Store) IsActive(ctx context.Context, phone string) (bool, error) {
+	active, _, err := s.Status(ctx, phone)
+	return active, err
 }
 
 func (s *Store) ActivateFor30Days(ctx context.Context, phone string, paymentLinkID string) error {

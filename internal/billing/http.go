@@ -41,6 +41,30 @@ func CreatePaymentLinkHandler(store *Store, rp *RazorpayClient) fiber.Handler {
 	}
 }
 
+func StatusHandler(store *Store) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		phone := strings.TrimSpace(c.Query("user_phone"))
+		if phone == "" {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "user_phone required"})
+		}
+
+		active, expiresAt, err := store.Status(c.Context(), phone)
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "billing status error"})
+		}
+
+		var expiresAtValue any
+		if expiresAt != nil {
+			expiresAtValue = expiresAt.UTC().Format(time.RFC3339)
+		}
+
+		return c.JSON(fiber.Map{
+			"active":     active,
+			"expires_at": expiresAtValue,
+		})
+	}
+}
+
 func RazorpayWebhookHandler(
 	billStore *Store,
 	expStore *expense.Store,

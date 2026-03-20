@@ -16,9 +16,21 @@ func CorsMiddleware() fiber.Handler {
 	}
 
 	return cors.New(cors.Config{
-		AllowOrigins:     origin,
-		AllowHeaders:     "Origin, Content-Type, Accept, Authorization",
+		AllowOrigins: origin,
+		AllowHeaders: strings.Join([]string{
+			"Origin",
+			"Content-Type",
+			"Accept",
+			"Authorization",
+			"X-API-Key",
+			"X-Admin-Key",
+			"X-Client-Id",
+			"Idempotency-Key",
+			"DEMO_SECRET",
+			"X-User-Id",
+		}, ", "),
 		AllowMethods:     "GET,POST,PUT,DELETE,OPTIONS",
 		AllowCredentials: false,
+		ExposeHeaders:    "Content-Disposition",
 	})
 }

@@ -151,6 +151,7 @@ func main() {
 	app.Get("/v1/expense/report", expense.MonthlyPDFHandler(expenseStore, billingStore))
 
 	// Billing / Razorpay
+	app.Get("/v1/billing/status", billing.StatusHandler(billingStore))
 	app.Post("/v1/billing/create-link", billing.CreatePaymentLinkHandler(billingStore, razorpayClient))
 	app.Post("/v1/billing/webhook", billing.RazorpayWebhookHandler(billingStore, expenseStore, repStore, twilioClient))
 
@@ -218,14 +219,16 @@ func requestLogger() fiber.Handler {
 
 func apiKeyMiddleware() fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		if c.Method() == "OPTIONS" {
+		if c.Method() == fiber.MethodOptions {
 			return c.SendStatus(fiber.StatusNoContent)
 		}
 
-		path := strings.ToLower(strings.TrimSuffix(c.Path(), "/"))
+		path := c.Path()
 		if path == "/health" || path == "/api/health" {
 			return c.Next()
 		}
+
+		path = strings.ToLower(strings.TrimSuffix(path, "/"))
 		if path == "" {
 			path = "/"
 		}

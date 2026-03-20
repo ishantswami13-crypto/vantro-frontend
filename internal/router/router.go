@@ -114,7 +114,6 @@ func (r *Router) RegisterRoutes(app *fiber.App) {
 		}
 	}
 
-	// New unified transactions endpoints
 	if r.SimpleTxHandler != nil && r.AuthMW != nil {
 		app.Post("/transactions", r.AuthMW, writeLimiter, r.SimpleTxHandler.Create)
 		app.Get("/me/transactions", r.AuthMW, r.SimpleTxHandler.List)

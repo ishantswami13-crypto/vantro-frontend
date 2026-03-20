@@ -29,6 +29,13 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
+api.log
+api.exe
+backend.log
+backend.err
+.gocache/
+.gomodcache/
+/vantro-frontend/
 
 # env files (can opt-in for committing if needed)
 .env*
